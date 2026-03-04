@@ -23,6 +23,7 @@ async function load() {
       return;
     }
     data = await r.json();
+  data.later = data.later || [];
   } catch { data = { tasks: [] }; }
   showUserMode();
   hideAuth();
@@ -148,6 +149,7 @@ function showResetView() {
 function loadGuestData() {
   const raw = localStorage.getItem(GUEST_KEY);
   data = raw ? JSON.parse(raw) : { tasks: [] };
+  data.later = data.later || [];
 }
 
 function showGuestMode() {
@@ -679,6 +681,39 @@ historyEl.addEventListener('click', e => {
   renderHistory();
 });
 
+// ── Later list ────────────────────────────────────────────────────────────────
+function addLaterItem(text) {
+  data.later.push({ id: crypto.randomUUID(), text });
+  persist();
+  render();
+}
+
+function deleteLaterItem(id) {
+  data.later = data.later.filter(i => i.id !== id);
+  persist();
+  render();
+}
+
+function promoteToTask(id) {
+  const item = data.later.find(i => i.id === id);
+  if (!item) return;
+  data.tasks.push({ id: crypto.randomUUID(), name: item.text, sessions: [] });
+  data.later = data.later.filter(i => i.id !== id);
+  persist();
+  render();
+}
+
+function renderLater() {
+  const ul = document.getElementById('later-list');
+  ul.innerHTML = data.later.map(item => `
+    <li class="later-item" data-id="${item.id}">
+      <span class="later-text">${esc(item.text)}</span>
+      <button class="later-promote" data-id="${item.id}" title="move to tasks">→</button>
+      <button class="later-del" data-id="${item.id}">✕</button>
+    </li>
+  `).join('');
+}
+
 // ── Render ────────────────────────────────────────────────────────────────────
 function render() {
   const q      = query();
@@ -757,6 +792,7 @@ function render() {
   totalTime.textContent  = fmt(allTodayMs());
 
   renderHistory();
+  renderLater();
   ensureTick();
   updateTabTitle();
 }
@@ -905,6 +941,17 @@ listEl.addEventListener('click', e => {
   }
 });
 
+// ── Later clicks ──────────────────────────────────────────────────────────────
+document.getElementById('later-list').addEventListener('click', e => {
+  if (e.target.classList.contains('later-promote')) {
+    promoteToTask(e.target.dataset.id);
+    return;
+  }
+  if (e.target.classList.contains('later-del')) {
+    deleteLaterItem(e.target.dataset.id);
+  }
+});
+
 // ── Global shortcuts ──────────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   if (e.key === 'n' && document.activeElement === document.body) {
@@ -930,6 +977,17 @@ document.addEventListener('keydown', e => {
     searchEl.blur();
   }
 });
+
+// ── Later input ───────────────────────────────────────────────────────────────
+document.getElementById('later-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const val = e.target.value.trim();
+    if (val) { addLaterItem(val); e.target.value = ''; }
+  }
+});
+
+// Prevent later-input blur from interfering with task list focus
+document.getElementById('later-input').addEventListener('blur', () => {});
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 window.onGoogleLibraryLoad = initGoogleButton; // fires when GIS script finishes loading

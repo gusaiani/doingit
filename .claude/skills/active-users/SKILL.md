@@ -13,7 +13,13 @@ Count distinct users who logged task sessions in production over the last N days
    sleep 4
    ```
 
-2. Run the query (replace `2` with the requested number of days if specified):
+2. Retrieve the database password at runtime:
+   ```
+   fly ssh console -a tikkit -C "printenv DATABASE_URL"
+   ```
+   This returns the full connection string. Extract the password from it.
+
+3. Run the query (replace `2` with the requested number of days if specified):
    ```sql
    SELECT COUNT(DISTINCT user_id) AS active_users
    FROM user_data,
@@ -22,14 +28,14 @@ Count distinct users who logged task sessions in production over the last N days
    WHERE (session ->> 'start')::bigint
        > (EXTRACT(EPOCH FROM NOW() - INTERVAL '<N> days') * 1000)::bigint;
    ```
-   Full command:
+   Full command (substitute the password retrieved above):
    ```
-   psql "postgres://tikkit:REDACTED@localhost:5433/tikkit?sslmode=disable" -c "<query above>"
+   psql "postgres://tikkit:<password>@localhost:5433/tikkit?sslmode=disable" -c "<query above>"
    ```
 
-3. Report the result clearly to the user.
+4. Report the result clearly to the user.
 
-4. Kill the proxy process when done.
+5. Kill the proxy process when done.
 
 ## Notes
 - The proxy may already be running from a previous call — the bind error is harmless, the query will still work.

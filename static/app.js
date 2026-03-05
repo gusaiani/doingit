@@ -625,7 +625,12 @@ function renderHistory() {
 
   const weekTotal = allWeekMs();
 
-  historyEl.innerHTML = days.map(dateStr => {
+  historyEl.innerHTML = `
+    <div class="total-row week-total-row">
+      <span class="total-label">week</span>
+      <span class="total-time" id="week-total-time">${fmt(weekTotal)}</span>
+    </div>
+  ` + days.map(dateStr => {
     const isExp  = expandedDays.has(dateStr);
     const total  = dayTotalMs(dateStr);
     const d      = new Date(dateStr + 'T12:00:00');
@@ -648,12 +653,7 @@ function renderHistory() {
           </div>`).join('')
       }</div>` : ''}
     `;
-  }).join('') + `
-    <div class="total-row week-total-row">
-      <span class="total-label">week</span>
-      <span class="total-time" id="week-total-time">${fmt(weekTotal)}</span>
-    </div>
-  `;
+  }).join('');
 }
 
 historyEl.addEventListener('click', e => {
@@ -697,10 +697,10 @@ function deleteLaterItem(id) {
 function promoteToTask(id) {
   const item = data.later.find(i => i.id === id);
   if (!item) return;
-  data.tasks.push({ id: crypto.randomUUID(), name: item.text, sessions: [] });
+  const task = { id: crypto.randomUUID(), name: item.text, sessions: [] };
+  data.tasks.push(task);
   data.later = data.later.filter(i => i.id !== id);
-  persist();
-  render();
+  startTask(task); // stops any running task, persists, renders
 }
 
 function renderLater() {
@@ -708,7 +708,7 @@ function renderLater() {
   ul.innerHTML = data.later.map(item => `
     <li class="later-item" data-id="${item.id}">
       <span class="later-text">${esc(item.text)}</span>
-      <button class="later-promote" data-id="${item.id}" title="move to tasks">→</button>
+      <button class="later-promote" data-id="${item.id}" title="start task">▶</button>
       <button class="later-del" data-id="${item.id}">✕</button>
     </li>
   `).join('');

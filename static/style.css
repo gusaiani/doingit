@@ -338,7 +338,6 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
-.task-row:last-child { border-bottom-width: 2px; }
 
 .task-row.selected { background: var(--sel); }
 
@@ -517,6 +516,7 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 6px 60px 6px 22px;
+  border-bottom: 2px solid var(--border);
 }
 
 .total-label {
@@ -538,9 +538,9 @@ body {
   margin-top: 40px;
 }
 
-.day-row:first-child { border-top: none; }
+.week-total-row { border-bottom: 2px solid var(--border); }
 
-.week-total-row { border-top: 2px solid var(--border); }
+.day-row:first-child { border-top: none; }
 
 .day-row {
   display: flex;
@@ -648,8 +648,6 @@ body {
 /* ── Later list ── */
 #later {
   margin-top: 40px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
 }
 
 #later-header {
@@ -657,7 +655,9 @@ body {
   color: var(--dimmer);
   text-transform: uppercase;
   letter-spacing: 0.15em;
+  padding: 0 0 8px 22px;
   margin-bottom: 10px;
+  border-bottom: 2px solid var(--border);
 }
 
 #later-input {
@@ -669,7 +669,7 @@ body {
   color: var(--text);
   font-family: var(--font);
   font-size: 14px;
-  padding: 6px 0 8px;
+  padding: 6px 0 8px 22px;
   caret-color: var(--accent);
   margin-bottom: 4px;
   transition: border-color 0.15s;
@@ -684,7 +684,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 0;
+  padding: 6px 0 6px 22px;
   border-bottom: 1px solid var(--border);
   font-size: 14px;
 }

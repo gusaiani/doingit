@@ -1,4 +1,4 @@
-# Tkdoro
+# Doing It
 
 A minimal, keyboard-driven time tracker inspired by Notational Velocity.
 
@@ -151,8 +151,8 @@ The app has a built-in forgot-password flow using [Resend](https://resend.com) a
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RESEND_API_KEY` | *(empty)* | API key from [resend.com](https://resend.com). If empty, emails are skipped silently. |
-| `RESEND_FROM` | `noreply@tkdoro.live` | Sender address — must be on a domain verified in Resend. |
-| `APP_URL` | `https://tkdoro.live` | Base URL prepended to the reset link in emails. Set to `http://localhost:8000` for local testing. |
+| `RESEND_FROM` | `noreply@doingit.online` | Sender address — must be on a domain verified in Resend. |
+| `APP_URL` | `https://doingit.online` | Base URL prepended to the reset link in emails. Set to `http://localhost:8000` for local testing. |
 
 **Local testing without email**
 

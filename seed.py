@@ -76,7 +76,7 @@ def main():
                 k, v = line.split("=", 1)
                 os.environ.setdefault(k.strip(), v.strip())
 
-    parser = argparse.ArgumentParser(description="Seed Tkdoro with sample data")
+    parser = argparse.ArgumentParser(description="Seed Doing It with sample data")
     parser.add_argument("--email", required=True, help="User email to seed")
     parser.add_argument("--db", default=os.getenv("DATABASE_URL"),
                         help="Postgres URL (default: DATABASE_URL from .env)")

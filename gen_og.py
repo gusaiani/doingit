@@ -43,7 +43,7 @@ f_hint    = font(22)
 f_url     = font(18)
 
 # ── Wordmark ─────────────────────────────────────────────────────────────────
-logo_text = "Tkdoro"
+logo_text = "Doing It"
 bb = draw.textbbox((0, 0), logo_text, font=f_logo)
 lw = bb[2] - bb[0]
 draw.text(((W - lw) // 2, 195), logo_text, font=f_logo, fill=hex2rgb(RED))
@@ -77,7 +77,7 @@ for text, color, bold in hint_parts:
     x += bb[2] - bb[0]
 
 # ── URL bottom-right ──────────────────────────────────────────────────────────
-url_text = "tkdoro.live"
+url_text = "doingit.online"
 bb = draw.textbbox((0, 0), url_text, font=f_url)
 draw.text((W - bb[2] - bb[0] - 40, H - 40), url_text, font=f_url, fill=hex2rgb(DIMMER))
 

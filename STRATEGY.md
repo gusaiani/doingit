@@ -1,4 +1,4 @@
-# Tkdoro Launch Strategy
+# Doing It Launch Strategy
 
 > **Core message:** "The time tracker that gets out of your way."
 
@@ -12,7 +12,7 @@ Hacker News is the best single channel for developer tools. A good Show HN can d
 
 **Format:**
 ```
-Show HN: Tkdoro – keyboard-driven time tracker (no menus, just Enter)
+Show HN: Doing It – keyboard-driven time tracker (no menus, just Enter)
 ```
 
 **Post body (~200 words):**
@@ -60,7 +60,7 @@ Type a task → ↵ start → ↵ stop. That's it.
 
 No menus. No timers to configure. No mouse.
 
-tkdoro.live
+doingit.online
 ```
 
 Follow up replies with: the tech stack, the "why", and a link to the HN thread once live.
@@ -90,7 +90,7 @@ Reddit requires genuine participation — don't just drop a link. Write a real p
 ## Quick Wins (Do First)
 
 - [ ] **Google Search Console** — add the site, submit `sitemap.xml` (or just the homepage URL). Gets the page indexed within days.
-- [ ] **Custom domain** — `tikkit.app` or `tikkit.io` would look more polished than `tkdoro.live` for PH/HN posts. Check availability.
+- [ ] **Custom domain** — `doingit.online` ✓
 - [ ] **OG image** — already added at `/static/og.svg`. Verify at https://opengraph.xyz before posting anywhere.
 - [ ] **Twitter Card** — verify at https://cards-dev.twitter.com/validator.
 
@@ -100,7 +100,7 @@ Reddit requires genuine participation — don't just drop a link. Write a real p
 
 | Context | Headline |
 |---|---|
-| HN title | `Tkdoro – keyboard-driven time tracker (no menus, just Enter)` |
+| HN title | `Doing It – keyboard-driven time tracker (no menus, just Enter)` |
 | PH tagline | `The time tracker that gets out of your way` |
 | Tweet hook | `I built a time tracker with one rule: the only input is your keyboard.` |
 | OG description | `Type a task, press Enter to start. No menus, no friction. See where your day actually went.` |

@@ -198,8 +198,8 @@ async def forgot_password(req: ForgotPasswordRequest, db=Depends(get_db)):
                 json={
                     "from": RESEND_FROM,
                     "to": [req.email],
-                    "subject": "Reset your Tkdoro password",
-                    "html": f"<p>Reset your Tkdoro password (expires in 1 hour):</p><p><a href='{reset_url}'>{reset_url}</a></p><p>If you didn't request this, ignore this email.</p>",
+                    "subject": "Reset your Doing It password",
+                    "html": f"<p>Reset your Doing It password (expires in 1 hour):</p><p><a href='{reset_url}'>{reset_url}</a></p><p>If you didn't request this, ignore this email.</p>",
                 },
             )
     return {"ok": True}

@@ -729,14 +729,9 @@ function render() {
 
   listEl.innerHTML = '';
 
-  // create hint
+  // create hint (inline in search row)
   const exactMatch = tasks.find(t => t.name.toLowerCase() === qLC);
-  if (q && !exactMatch) {
-    const li = document.createElement('li');
-    li.className = 'create-hint';
-    li.innerHTML = `↵ &nbsp;create <em>"${esc(q)}"</em>`;
-    listEl.appendChild(li);
-  }
+  document.getElementById('search-create-hint').classList.toggle('visible', !!(q && !exactMatch));
 
   // empty state
   if (!q && tasks.length === 0) {
@@ -798,6 +793,18 @@ function render() {
 }
 
 // ── Keyboard ──────────────────────────────────────────────────────────────────
+document.getElementById('search-create-hint').addEventListener('mousedown', e => {
+  e.preventDefault(); // keep focus on input
+  const q = query();
+  if (!q) return;
+  const task = { id: crypto.randomUUID(), name: q, sessions: [] };
+  data.tasks.unshift(task);
+  startTask(task);
+  searchEl.value = '';
+  selIdx = -1;
+  render();
+});
+
 searchEl.addEventListener('input', () => { selIdx = -1; render(); });
 
 searchEl.addEventListener('blur', () => {

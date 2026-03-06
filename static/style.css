@@ -313,17 +313,21 @@ body {
 /* ── Task list ── */
 #task-list { list-style: none; }
 
-.create-hint {
-  font-size: 15px;
+#search-create-hint {
+  font-size: 13px;
   color: var(--dim);
-  padding: 14px 0;
-  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: none;
+  padding-right: 2px;
+  cursor: pointer;
 }
 
-.create-hint em {
-  font-style: normal;
-  color: var(--accent);
-}
+#search-create-hint:hover { color: var(--accent); }
+
+#search-create-hint.visible { display: block; }
+
+.hint-return { position: relative; top: 2px; display: inline-block; }
 
 .empty-state {
   font-size: 15px;

@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py index.html favicon.svg favicon-local.svg ./
+COPY app.py index.html favicon-local.png ./
 COPY static/ ./static/
 
 EXPOSE 8080

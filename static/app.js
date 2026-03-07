@@ -410,8 +410,11 @@ function armPomodoroTimer(taskName, sessionStart) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const todayStr = () => new Date().toISOString().slice(0,10);
-const isToday  = ts => new Date(ts).toISOString().slice(0,10) === todayStr();
+function localDateStr(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+const todayStr = () => localDateStr();
+const isToday  = ts => localDateStr(new Date(ts)) === todayStr();
 
 function fmt(ms) {
   const s = Math.floor(ms / 1000);
@@ -581,7 +584,7 @@ function weekPastDays() {
   const days = [];
   const d = new Date(monday);
   while (d < today) {
-    days.push(d.toISOString().slice(0, 10));
+    days.push(localDateStr(d));
     d.setDate(d.getDate() + 1);
   }
   return days.reverse();
@@ -590,7 +593,7 @@ function weekPastDays() {
 function dayTotalMs(dateStr) {
   return data.tasks.reduce((total, t) =>
     total + t.sessions
-      .filter(s => s.end && new Date(s.start).toISOString().slice(0, 10) === dateStr)
+      .filter(s => s.end && localDateStr(new Date(s.start)) === dateStr)
       .reduce((a, s) => a + (s.end - s.start), 0)
   , 0);
 }
@@ -601,7 +604,7 @@ function tasksForDay(dateStr) {
       id: t.id,
       name: t.name,
       ms: t.sessions
-        .filter(s => s.end && new Date(s.start).toISOString().slice(0, 10) === dateStr)
+        .filter(s => s.end && localDateStr(new Date(s.start)) === dateStr)
         .reduce((a, s) => a + (s.end - s.start), 0)
     }))
     .filter(t => t.ms > 0)
@@ -613,7 +616,7 @@ function deleteTaskDay(taskId, dateStr) {
   if (!task) return;
   if (!confirm(`Delete all "${task.name}" sessions for ${dateStr}?`)) return;
   task.sessions = task.sessions.filter(s =>
-    new Date(s.start).toISOString().slice(0, 10) !== dateStr
+    localDateStr(new Date(s.start)) !== dateStr
   );
   persist();
   render();

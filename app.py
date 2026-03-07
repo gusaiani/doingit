@@ -48,7 +48,7 @@ CANONICAL_HOST = "doingit.online"
 @app.middleware("http")
 async def redirect_to_canonical(request: Request, call_next):
     host = request.headers.get("host", "").split(":")[0]
-    if host and host != CANONICAL_HOST and host not in ("localhost", "127.0.0.1", "testclient"):
+    if host and host != CANONICAL_HOST and host not in ("localhost", "127.0.0.1", "testserver"):
         url = str(request.url).replace(f"://{host}", f"://{CANONICAL_HOST}", 1)
         from fastapi.responses import RedirectResponse
         return RedirectResponse(url, status_code=301)

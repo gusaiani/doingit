@@ -98,7 +98,7 @@
     <span class="hd-sep">/</span>
     <button class="hd-logout" id="hd-signin" style="display:none">sign in</button>
     <button class="hd-logout" id="hd-logout" style="display:none">logout</button>
-    <button class="hd-logout hd-upgrade" id="hd-upgrade" style="display:none">upgrade</button>
+    <button class="hd-logout hd-upgrade" id="hd-upgrade" style="display:none">upgrade: it’s $1.49 a month…</button>
     <button class="hd-logout hd-manage" id="hd-manage" style="display:none">pro ✓</button>
     <span class="hd-vip" id="hd-vip" style="display:none">♛ vip</span>
   </div>
@@ -142,18 +142,23 @@
 
 </div>
 <footer class="share-footer">
-  <span class="share-label">share</span>
-  <a class="share-link" href="https://twitter.com/intent/tweet?text=Doing+It+%E2%80%94+the+fastest+keyboard-driven+time+tracker&url=https%3A%2F%2Fdoingit.online" target="_blank" rel="noopener">𝕏</a>
-  <a class="share-link" href="https://news.ycombinator.com/submitlink?u=https%3A%2F%2Fdoingit.online&t=Doing+It+%E2%80%93+keyboard-driven+time+tracking" target="_blank" rel="noopener">HN</a>
-  <a class="share-link" href="https://www.producthunt.com/posts/new" target="_blank" rel="noopener">PH</a>
-  <a class="share-link" href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fdoingit.online" target="_blank" rel="noopener">in</a>
+  <div class="footer-inner">
+    <span class="footer-contact">Questions, suggestions? <a href="mailto:gustavo@poe.ma">Write Gustavo Saiani</a> / <a href="https://www.linkedin.com/in/gusaiani/" target="_blank" rel="noopener">I'm looking for my next job!</a></span>
+    <div class="footer-share">
+      <span class="share-label">share</span>
+      <a class="share-link" href="https://twitter.com/intent/tweet?text=Doing+It+%E2%80%94+the+fastest+keyboard-driven+time+tracker&url=https%3A%2F%2Fdoingit.online" target="_blank" rel="noopener">𝕏</a>
+      <a class="share-link" href="https://news.ycombinator.com/submitlink?u=https%3A%2F%2Fdoingit.online&t=Doing+It+%E2%80%93+keyboard-driven+time+tracking" target="_blank" rel="noopener">HN</a>
+      <a class="share-link" href="https://www.producthunt.com/posts/new" target="_blank" rel="noopener">PH</a>
+      <a class="share-link" href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fdoingit.online" target="_blank" rel="noopener">in</a>
+    </div>
+  </div>
 </footer>
 <div id="upgrade-modal" style="display:none">
   <div class="upgrade-backdrop" id="upgrade-backdrop"></div>
   <div class="upgrade-box">
     <p class="upgrade-message" id="upgrade-message">You've reached your 5 free sessions for today.</p>
     <p class="upgrade-sub">Upgrade for unlimited sessions — 30-day free trial.</p>
-    <button class="upgrade-cta" id="upgrade-cta">Start free trial — $1.49/mo</button>
+    <button class="upgrade-cta" id="upgrade-cta">It's $1.49 a month…doing it</button>
     <button class="upgrade-dismiss" id="upgrade-dismiss">maybe later</button>
   </div>
 </div>

@@ -1,8 +1,19 @@
 // ── Persistence ───────────────────────────────────────────────────────────────
-const GUEST_KEY = 'tt_guest_tasks';
+const GUEST_KEY        = 'tt_guest_tasks';
+const GUEST_TRIAL_KEY  = 'tt_guest_trial_start';
+const FREE_LIMIT       = 5;
 let data = { tasks: [] };
 
+// ── Billing state ─────────────────────────────────────────────────────────────
+let subscriptionStatus = 'free';
+let isComped = false;
+
 async function load() {
+  if (location.pathname === '/billing/success') {
+    history.replaceState(null, '', '/');
+    document.getElementById('billing-success-banner').style.display = 'flex';
+  }
+
   const resetToken = new URLSearchParams(location.search).get('token');
   if (resetToken) { showAuth(); showResetView(); return; }
   const token = localStorage.getItem('tt_token');
@@ -23,8 +34,9 @@ async function load() {
       return;
     }
     data = await r.json();
-  data.later = data.later || [];
+    data.later = data.later || [];
   } catch { data = { tasks: [] }; }
+  await fetchBillingStatus();
   showUserMode();
   hideAuth();
   render();
@@ -156,12 +168,120 @@ function showGuestMode() {
   document.getElementById('guest-banner').style.display = 'block';
   document.getElementById('hd-signin').style.display = '';
   document.getElementById('hd-logout').style.display = 'none';
+  subscriptionStatus = 'free';
+  isComped = false;
+  updateBillingUI();
 }
 
 function showUserMode() {
   document.getElementById('guest-banner').style.display = 'none';
   document.getElementById('hd-signin').style.display = 'none';
   document.getElementById('hd-logout').style.display = '';
+  updateBillingUI();
+}
+
+async function fetchBillingStatus() {
+  const token = localStorage.getItem('tt_token');
+  if (!token) return;
+  try {
+    const r = await fetch('/billing/status', { headers: { 'Authorization': `Bearer ${token}` } });
+    if (r.ok) {
+      const s = await r.json();
+      subscriptionStatus = s.subscription_status;
+      isComped = s.is_comped;
+    }
+  } catch {}
+  updateBillingUI();
+}
+
+function updateBillingUI() {
+  const token = localStorage.getItem('tt_token');
+  const subscribed = subscriptionStatus === 'active' || isComped;
+  document.getElementById('hd-upgrade').style.display = (token && !subscribed) ? '' : 'none';
+  document.getElementById('hd-manage').style.display  = (token && subscribed)  ? '' : 'none';
+}
+
+function showUpgradeModal(message) {
+  document.getElementById('upgrade-message').textContent =
+    message || "You've reached your 5 free sessions for today.";
+  document.getElementById('upgrade-modal').style.display = 'flex';
+}
+
+function hideUpgradeModal() {
+  document.getElementById('upgrade-modal').style.display = 'none';
+}
+
+async function startCheckout() {
+  const token = localStorage.getItem('tt_token');
+  if (!token) {
+    hideUpgradeModal();
+    authMode = 'signup';
+    showLoginView();
+    showAuth();
+    return;
+  }
+  try {
+    const guestTrialStart = localStorage.getItem(GUEST_TRIAL_KEY);
+    const body = guestTrialStart ? { guest_trial_start: parseInt(guestTrialStart) } : {};
+    const r = await fetch('/billing/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    if (r.ok) {
+      const json = await r.json();
+      window.location.href = json.url;
+    }
+  } catch {}
+}
+
+async function openBillingPortal() {
+  const token = localStorage.getItem('tt_token');
+  if (!token) return;
+  try {
+    const r = await fetch('/billing/portal', { headers: { 'Authorization': `Bearer ${token}` } });
+    if (r.ok) {
+      const json = await r.json();
+      window.location.href = json.url;
+    }
+  } catch {}
+}
+
+async function canStartSession() {
+  const token = localStorage.getItem('tt_token');
+  if (token) {
+    try {
+      const r = await fetch('/sessions/start', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (r.status === 402) {
+        const body = await r.json();
+        showUpgradeModal(body.detail);
+        return false;
+      }
+      return r.ok;
+    } catch {
+      return true; // network error: allow optimistically
+    }
+  } else {
+    // Guest: client-side trial + rate limit
+    let trialStart = localStorage.getItem(GUEST_TRIAL_KEY);
+    if (!trialStart) {
+      trialStart = Date.now();
+      localStorage.setItem(GUEST_TRIAL_KEY, trialStart);
+    }
+    const withinTrial = Date.now() - parseInt(trialStart) < 30 * 24 * 60 * 60 * 1000;
+    if (withinTrial) return true;
+    const today = localDateStr();
+    const todayCount = data.tasks.reduce((n, t) =>
+      n + t.sessions.filter(s => localDateStr(new Date(s.start)) === today).length, 0);
+    if (todayCount >= FREE_LIMIT) {
+      showUpgradeModal("You've reached your 5 free sessions for today.");
+      return false;
+    }
+    return true;
+  }
 }
 
 function showAuth() {
@@ -303,6 +423,8 @@ function logout() {
   if (ticker) { clearInterval(ticker); ticker = null; }
   clearPomodoroTimer();
   localStorage.removeItem('tt_token');
+  subscriptionStatus = 'free';
+  isComped = false;
   loadGuestData();
   showGuestMode();
   render();
@@ -469,12 +591,19 @@ function allWeekMs() {
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
-function startTask(task) {
+async function startTask(task) {
+  const isRunning = task.sessions.some(s => !s.end);
+
+  if (!isRunning) {
+    const allowed = await canStartSession();
+    if (!allowed) return;
+  }
+
   const cur = runningTask();
   if (cur && cur.id !== task.id) {
     cur.sessions.find(s => !s.end).end = Date.now();
   }
-  if (task.sessions.some(s => !s.end)) {
+  if (isRunning) {
     task.sessions.find(s => !s.end).end = Date.now();
     clearPomodoroTimer();
   } else {
@@ -659,7 +788,7 @@ function renderHistory() {
   }).join('');
 }
 
-historyEl.addEventListener('click', e => {
+historyEl.addEventListener('click', async e => {
   const dtDel = e.target.closest('.dt-del');
   if (dtDel) {
     const taskRow = dtDel.closest('.day-task-row');
@@ -671,7 +800,7 @@ historyEl.addEventListener('click', e => {
   if (taskRow) {
     const task = data.tasks.find(t => t.id === taskRow.dataset.taskId);
     if (task) {
-      startTask(task);
+      await startTask(task);
       searchEl.focus();
     }
     return;
@@ -697,13 +826,13 @@ function deleteLaterItem(id) {
   render();
 }
 
-function promoteToTask(id) {
+async function promoteToTask(id) {
   const item = data.later.find(i => i.id === id);
   if (!item) return;
   const task = { id: crypto.randomUUID(), name: item.text, sessions: [] };
   data.tasks.push(task);
   data.later = data.later.filter(i => i.id !== id);
-  startTask(task); // stops any running task, persists, renders
+  await startTask(task); // stops any running task, persists, renders
 }
 
 function renderLater() {
@@ -796,13 +925,13 @@ function render() {
 }
 
 // ── Keyboard ──────────────────────────────────────────────────────────────────
-document.getElementById('search-create-hint').addEventListener('mousedown', e => {
+document.getElementById('search-create-hint').addEventListener('mousedown', async e => {
   e.preventDefault(); // keep focus on input
   const q = query();
   if (!q) return;
   const task = { id: crypto.randomUUID(), name: q, sessions: [] };
   data.tasks.unshift(task);
-  startTask(task);
+  await startTask(task);
   searchEl.value = '';
   selIdx = -1;
   render();
@@ -816,7 +945,7 @@ searchEl.addEventListener('blur', () => {
   render();
 });
 
-searchEl.addEventListener('keydown', e => {
+searchEl.addEventListener('keydown', async e => {
   const tasks = filtered();
   const q     = query();
 
@@ -857,7 +986,7 @@ searchEl.addEventListener('keydown', e => {
     }
 
     if (task) {
-      startTask(task);
+      await startTask(task);
       searchEl.value = '';
       selIdx = -1;
       render();
@@ -914,7 +1043,7 @@ listEl.addEventListener('mousedown', e => {
   if (!e.target.closest('.sl-time-input')) e.preventDefault();
 });
 
-listEl.addEventListener('click', e => {
+listEl.addEventListener('click', async e => {
   const slRange = e.target.closest('.sl-range');
   if (slRange && slRange.closest('.sl-entry.editable')) {
     const entry = slRange.closest('.sl-entry');
@@ -949,7 +1078,7 @@ listEl.addEventListener('click', e => {
   if (main) {
     const row  = main.closest('.task-row');
     const task = data.tasks.find(t => t.id === row?.dataset.id);
-    if (task) { startTask(task); searchEl.blur(); }
+    if (task) { await startTask(task); searchEl.blur(); }
   }
 });
 
@@ -1000,6 +1129,16 @@ document.getElementById('later-input').addEventListener('keydown', e => {
 
 // Prevent later-input blur from interfering with task list focus
 document.getElementById('later-input').addEventListener('blur', () => {});
+
+// ── Billing UI events ─────────────────────────────────────────────────────────
+document.getElementById('upgrade-cta').addEventListener('click', startCheckout);
+document.getElementById('upgrade-dismiss').addEventListener('click', hideUpgradeModal);
+document.getElementById('upgrade-backdrop').addEventListener('click', hideUpgradeModal);
+document.getElementById('hd-upgrade').addEventListener('click', startCheckout);
+document.getElementById('hd-manage').addEventListener('click', openBillingPortal);
+document.getElementById('billing-success-close').addEventListener('click', () => {
+  document.getElementById('billing-success-banner').style.display = 'none';
+});
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 window.onGoogleLibraryLoad = initGoogleButton; // fires when GIS script finishes loading

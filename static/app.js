@@ -669,6 +669,9 @@ function liveUpdate() {
     const t = data.tasks.find(x => x.id === el.dataset.live);
     if (t) el.textContent = fmt(taskTodayMs(t));
   });
+  document.querySelectorAll('[data-live-session]').forEach(el => {
+    el.textContent = fmt(Date.now() - parseInt(el.dataset.liveSession));
+  });
   document.querySelectorAll('[data-live-range]').forEach(el => {
     const s = JSON.parse(el.dataset.liveRange);
     el.textContent = fmt((Date.now()) - s);
@@ -941,7 +944,13 @@ function render() {
       <div class="task-main">
         <span class="t-name">${esc(task.name)}</span>
         <span class="t-dot"></span>
-        <span class="t-time"${isRunning ? ` data-live="${task.id}"` : ''}>${fmt(taskTodayMs(task))}</span>
+        ${(() => {
+          if (isRunning) {
+            const sessionStart = task.sessions.find(s => !s.end).start;
+            return `<span class="t-time"><span class="t-time-label">session</span> <span data-live-session="${sessionStart}">${fmt(Date.now() - sessionStart)}</span> <span class="t-time-sep">·</span> <span class="t-time-label">today</span> <span data-live="${task.id}">${fmt(taskTodayMs(task))}</span></span>`;
+          }
+          return `<span class="t-time">${fmt(taskTodayMs(task))}</span>`;
+        })()}
         <span class="t-expand">${hasLog ? (isExp ? '▲' : '▼') : ''}</span>
         <button class="t-del" data-id="${task.id}" tabindex="-1">✕</button>
       </div>

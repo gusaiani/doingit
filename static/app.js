@@ -1104,8 +1104,21 @@ document.getElementById('later-list').addEventListener('click', e => {
 });
 
 // ── Global shortcuts ──────────────────────────────────────────────────────────
-document.addEventListener('keydown', e => {
-  if (e.key === 'n' && document.activeElement === document.body) {
+document.addEventListener('keydown', async e => {
+  const onInput = document.activeElement && (
+    document.activeElement.tagName === 'INPUT' ||
+    document.activeElement.tagName === 'TEXTAREA' ||
+    document.activeElement.isContentEditable
+  );
+  if (!onInput) {
+    const n = parseInt(e.key);
+    if (n >= 1 && n <= 7) {
+const task = filtered()[n - 1];
+      if (task) { e.preventDefault(); await startTask(task); }
+      return;
+    }
+  }
+  if (e.key === 'n' && !onInput) {
     e.preventDefault();
     searchEl.focus();
     return;
@@ -1128,6 +1141,8 @@ document.addEventListener('keydown', e => {
     searchEl.blur();
   }
 });
+
+document.querySelector('.search-prompt').addEventListener('click', () => searchEl.focus());
 
 // ── Later input ───────────────────────────────────────────────────────────────
 document.getElementById('later-input').addEventListener('keydown', e => {

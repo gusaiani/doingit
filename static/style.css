@@ -406,7 +406,18 @@ body {
   flex-shrink: 0;
 }
 
-.task-row.running .t-time { color: var(--accent); }
+.task-row.running .t-time { color: var(--dim); }
+
+.t-time-label {
+  font-family: var(--font);
+  font-size: 11px;
+  color: var(--dimmer);
+  font-variant-numeric: normal;
+}
+.t-time-sep {
+  color: var(--dimmer);
+  margin: 0 2px;
+}
 
 .t-expand {
   font-size: 10px;

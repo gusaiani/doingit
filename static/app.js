@@ -702,12 +702,12 @@ function filtered() {
   const q = queryLC();
   if (!q) {
     const todayTasks = data.tasks.filter(t => taskTodayMs(t) > 0 || t.sessions.some(s => !s.end));
-    if (todayTasks.length >= 5) return todayTasks;
+    if (todayTasks.length >= 10) return todayTasks;
     const todayIds = new Set(todayTasks.map(t => t.id));
     const recent = data.tasks
       .filter(t => !todayIds.has(t.id) && t.sessions.length > 0)
       .sort((a, b) => Math.max(...b.sessions.map(s => s.start)) - Math.max(...a.sessions.map(s => s.start)))
-      .slice(0, 5 - todayTasks.length);
+      .slice(0, 10 - todayTasks.length);
     return [...todayTasks, ...recent];
   }
   return data.tasks.filter(t => t.name.toLowerCase().includes(q));
@@ -874,6 +874,22 @@ function render() {
   // create hint (inline in search row)
   const exactMatch = tasks.find(t => t.name.toLowerCase() === qLC);
   document.getElementById('search-create-hint').classList.toggle('visible', !!(q && !exactMatch));
+
+  // update number-key hint to reflect how many tasks are actually visible
+  const numHintEl = document.getElementById('num-shortcut-hint');
+  if (numHintEl) {
+    const count = tasks.length;
+    if (count >= 2) {
+      const last = count >= 10 ? '0' : String(count);
+      numHintEl.textContent = `1-${last}`;
+      numHintEl.parentElement.style.display = '';
+    } else if (count === 1) {
+      numHintEl.textContent = '1';
+      numHintEl.parentElement.style.display = '';
+    } else {
+      numHintEl.parentElement.style.display = 'none';
+    }
+  }
 
   // empty state
   if (!q && tasks.length === 0) {
@@ -1111,9 +1127,9 @@ document.addEventListener('keydown', async e => {
     document.activeElement.isContentEditable
   );
   if (!onInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
-    const n = parseInt(e.key);
-    if (n >= 1 && n <= 7) {
-const task = filtered()[n - 1];
+    const digit = e.key === '0' ? 10 : parseInt(e.key);
+    if (digit >= 1 && digit <= 10) {
+      const task = filtered()[digit - 1];
       if (task) { e.preventDefault(); await startTask(task); }
       return;
     }

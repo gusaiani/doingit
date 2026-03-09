@@ -1110,7 +1110,7 @@ document.addEventListener('keydown', async e => {
     document.activeElement.tagName === 'TEXTAREA' ||
     document.activeElement.isContentEditable
   );
-  if (!onInput) {
+  if (!onInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
     const n = parseInt(e.key);
     if (n >= 1 && n <= 7) {
 const task = filtered()[n - 1];

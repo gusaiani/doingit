@@ -270,7 +270,7 @@ body {
   line-height: 0;
   padding: 6px 2px 6px 0;
   user-select: none;
-  pointer-events: none;
+  cursor: pointer;
 }
 
 .beaver-mascot {

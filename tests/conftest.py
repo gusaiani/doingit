@@ -34,10 +34,43 @@ def init_test_db():
                 created_at    TIMESTAMPTZ DEFAULT NOW()
             )
         """)
+        cur.execute("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS user_data (
-                user_id    INTEGER PRIMARY KEY REFERENCES users(id),
-                tasks_json TEXT NOT NULL DEFAULT '{"tasks":[]}'
+                user_id     INTEGER PRIMARY KEY REFERENCES users(id),
+                tasks_json  TEXT NOT NULL DEFAULT '{"tasks":[]}',
+                migrated_at TIMESTAMPTZ
+            )
+        """)
+        cur.execute(
+            "ALTER TABLE user_data ADD COLUMN IF NOT EXISTS migrated_at TIMESTAMPTZ"
+        )
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS tasks (
+                id      TEXT    NOT NULL,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                name    TEXT    NOT NULL,
+                PRIMARY KEY (id, user_id)
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                id       TEXT    NOT NULL PRIMARY KEY,
+                task_id  TEXT    NOT NULL,
+                user_id  INTEGER NOT NULL,
+                start_ts BIGINT  NOT NULL,
+                end_ts   BIGINT,
+                FOREIGN KEY (task_id, user_id) REFERENCES tasks(id, user_id) ON DELETE CASCADE,
+                UNIQUE (task_id, user_id, start_ts)
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS later_items (
+                id       TEXT    NOT NULL,
+                user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                text     TEXT    NOT NULL,
+                position INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (id, user_id)
             )
         """)
     conn.close()

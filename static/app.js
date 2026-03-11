@@ -646,6 +646,72 @@ function deleteSession(taskId, sessionStart) {
   render();
 }
 
+function moveSession(fromTaskId, sessionStart, toTaskId) {
+  const fromTask = data.tasks.find(t => t.id === fromTaskId);
+  const toTask   = data.tasks.find(t => t.id === toTaskId);
+  if (!fromTask || !toTask) return;
+  const idx = fromTask.sessions.findIndex(s => s.start === sessionStart);
+  if (idx === -1) return;
+  const session = fromTask.sessions[idx];
+  toTask.sessions.push({ start: session.start, end: session.end });
+  fromTask.sessions.splice(idx, 1);
+  expanded.add(toTaskId);
+  persist();
+  render();
+}
+
+let _moveDropdown = null;
+let _moveBackdrop = null;
+
+function closeMoveDropdown() {
+  if (_moveDropdown) { _moveDropdown.remove(); _moveDropdown = null; }
+  if (_moveBackdrop) { _moveBackdrop.remove(); _moveBackdrop = null; }
+}
+
+function showMoveDropdown(trigger, fromTaskId, sessionStart) {
+  closeMoveDropdown();
+
+  const tasks = data.tasks
+    .filter(t => t.id !== fromTaskId)
+    .sort((a, b) => {
+      const aLast = a.sessions.length ? Math.max(...a.sessions.map(s => s.start)) : 0;
+      const bLast = b.sessions.length ? Math.max(...b.sessions.map(s => s.start)) : 0;
+      return bLast - aLast;
+    });
+  if (!tasks.length) return;
+
+  // Invisible backdrop catches clicks outside the dropdown
+  const backdrop = document.createElement('div');
+  backdrop.className = 'sl-move-backdrop';
+  backdrop.addEventListener('click', () => closeMoveDropdown());
+  document.body.appendChild(backdrop);
+  _moveBackdrop = backdrop;
+
+  const dd = document.createElement('div');
+  dd.className = 'sl-move-dropdown';
+  dd.innerHTML = tasks.map(t =>
+    `<div class="sl-move-option" data-task-id="${t.id}">${esc(t.name)}</div>`
+  ).join('');
+  document.body.appendChild(dd);
+  _moveDropdown = dd;
+
+  const rect = trigger.getBoundingClientRect();
+  const ddRect = dd.getBoundingClientRect();
+  let top = rect.bottom + 4;
+  if (top + ddRect.height > window.innerHeight - 8) {
+    top = rect.top - ddRect.height - 4;
+  }
+  dd.style.top  = `${top}px`;
+  dd.style.right = `${window.innerWidth - rect.right}px`;
+
+  dd.addEventListener('click', e => {
+    const opt = e.target.closest('.sl-move-option');
+    if (!opt) return;
+    closeMoveDropdown();
+    moveSession(fromTaskId, sessionStart, opt.dataset.taskId);
+  });
+}
+
 // ── Tick ──────────────────────────────────────────────────────────────────────
 let ticker = null;
 
@@ -715,12 +781,12 @@ function filtered() {
   const q = queryLC();
   if (!q) {
     const todayTasks = data.tasks.filter(t => taskTodayMs(t) > 0 || t.sessions.some(s => !s.end));
-    if (todayTasks.length >= 10) return todayTasks;
+    if (todayTasks.length >= 5) return todayTasks;
     const todayIds = new Set(todayTasks.map(t => t.id));
     const recent = data.tasks
       .filter(t => !todayIds.has(t.id) && t.sessions.length > 0)
       .sort((a, b) => Math.max(...b.sessions.map(s => s.start)) - Math.max(...a.sessions.map(s => s.start)))
-      .slice(0, 10 - todayTasks.length);
+      .slice(0, 5 - todayTasks.length);
     return [...todayTasks, ...recent];
   }
   return data.tasks.filter(t => t.name.toLowerCase().includes(q));
@@ -895,6 +961,7 @@ function updateHintRow() {
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function render() {
+  closeMoveDropdown();
   const q      = query();
   const qLC    = q.toLowerCase();
   const tasks  = filtered();
@@ -933,18 +1000,26 @@ function render() {
     li.className = ['task-row', isRunning ? 'running' : '', isSel ? 'selected' : ''].join(' ').trim();
     li.dataset.id = task.id;
 
-    const shownSess  = hasLog ? todaySess : (() => {
+    // Which sessions to show in the expanded view (single date)
+    const shownSess = hasLog ? todaySess : (() => {
       const last = [...task.sessions].filter(s => s.end).sort((a,b) => b.start - a.start);
       if (!last.length) return [];
       const lastDate = localDateStr(new Date(last[0].start));
       return task.sessions.filter(s => localDateStr(new Date(s.start)) === lastDate);
     })();
-    const shownDate  = hasLog ? 'today' : (() => {
+    const shownDate = hasLog ? 'today' : (() => {
       if (!shownSess.length) return '';
       const d = new Date(shownSess[0].start);
       return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toLowerCase();
     })();
-    const sessionHTML = isExp && shownSess.length ? `
+    const displayMs = hasLog
+      ? taskTodayMs(task)
+      : shownSess.reduce((a,s) => a + ((s.end ?? Date.now()) - s.start), 0);
+
+    // Recent tasks (no today activity, not running) show as plain rows — no time, no expand
+    const isRecent = !hasLog && !isRunning;
+
+    const sessionHTML = !isRecent && isExp && shownSess.length ? `
       <div class="session-log open">
         <div class="sl-date">${shownDate}</div>
         ${shownSess.map(s => {
@@ -953,8 +1028,8 @@ function render() {
           return `<div class="sl-entry${live ? ' live' : (hasLog ? ' editable' : '')}"
               data-task-id="${task.id}" data-session-start="${s.start}">
             <span class="sl-range">${fmtClock(s.start)} – ${live ? 'now' : fmtClock(s.end)}</span>
-            <span class="sl-dur"${live ? ` data-live-range="${s.start}"` : ''}>${fmt(dur)}</span>
-            ${live ? '' : hasLog ? `<button class="sl-del" tabindex="-1">✕</button>` : ''}
+            ${!live ? `<span class="sl-move">move</span><span class="sl-move-sep"> · </span>` : ''}<span class="sl-dur"${live ? ` data-live-range="${s.start}"` : ''}>${fmt(dur)}</span>
+            ${!live ? `<button class="sl-del" tabindex="-1">✕</button>` : ''}
           </div>`;
         }).join('')}
       </div>` : '';
@@ -963,14 +1038,14 @@ function render() {
       <div class="task-main">
         <span class="t-name">${esc(task.name)}</span>
         <span class="t-dot"></span>
-        ${(() => {
+        ${isRecent ? '' : (() => {
           if (isRunning) {
             const sessionStart = task.sessions.find(s => !s.end).start;
             return `<span class="t-time"><span class="t-time-label">session</span> <span data-live-session="${sessionStart}">${fmt(Date.now() - sessionStart)}</span> <span class="t-time-sep">·</span> <span class="t-time-label">today</span> <span data-live="${task.id}">${fmt(taskTodayMs(task))}</span></span>`;
           }
-          return `<span class="t-time">${fmt(taskTodayMs(task))}</span>`;
+          return `<span class="t-time">${fmt(displayMs)}</span>`;
         })()}
-        <span class="t-expand">${task.sessions.length ? (isExp ? '▲' : '▼') : ''}</span>
+        ${isRecent ? '' : `<span class="t-expand">${task.sessions.length ? (isExp ? '▲' : '▼') : ''}</span>`}
         <button class="t-del" data-id="${task.id}" tabindex="-1">✕</button>
       </div>
       ${sessionHTML}
@@ -979,28 +1054,25 @@ function render() {
     listEl.appendChild(li);
   });
 
-  // total row — temporarily show list while user is searching
+  // total row — always visible as the "today" anchor
   const listShown = tasksVisible || !!q;
-  const hasData = data.tasks.some(t => t.sessions.some(s => isToday(s.start)));
-  totalRow.style.display = hasData ? 'flex' : 'none';
+  totalRow.style.display = 'flex';
   listEl.style.display   = listShown ? '' : 'none';
-  if (hasData) {
-    if (!listShown && running) {
-      const sessionStart = running.sessions.find(s => !s.end).start;
-      totalRow.innerHTML = `
-        <span class="total-label">today &nbsp;·&nbsp; <span class="total-active-name">${esc(running.name)}</span></span>
-        <span class="total-time total-time-running">
-          <span class="t-time-label">session</span> <span data-live-session="${sessionStart}">${fmt(Date.now() - sessionStart)}</span>
-          <span class="t-time-sep">·</span>
-          <span class="t-time-label">today</span> <span id="total-time">${fmt(allTodayMs())}</span>
-        </span>
-        <span class="total-expand">▼</span>`;
-    } else {
-      totalRow.innerHTML = `
-        <span class="total-label">today</span>
-        <span class="total-time" id="total-time">${fmt(allTodayMs())}</span>
-        <span class="total-expand">${listShown ? '▲' : '▼'}</span>`;
-    }
+  if (!listShown && running) {
+    const sessionStart = running.sessions.find(s => !s.end).start;
+    totalRow.innerHTML = `
+      <span class="total-label">today &nbsp;·&nbsp; <span class="total-active-name">${esc(running.name)}</span></span>
+      <span class="total-time total-time-running">
+        <span class="t-time-label">session</span> <span data-live-session="${sessionStart}">${fmt(Date.now() - sessionStart)}</span>
+        <span class="t-time-sep">·</span>
+        <span class="t-time-label">today</span> <span id="total-time">${fmt(allTodayMs())}</span>
+      </span>
+      <span class="total-expand">▼</span>`;
+  } else {
+    totalRow.innerHTML = `
+      <span class="total-label">today</span>
+      <span class="total-time" id="total-time">${fmt(allTodayMs())}</span>
+      <span class="total-expand">${listShown ? '▲' : '▼'}</span>`;
   }
 
   renderHistory();
@@ -1138,6 +1210,13 @@ listEl.addEventListener('click', async e => {
     if (!entry.querySelector('.sl-time-input')) {
       beginEditSession(entry, entry.dataset.taskId, parseInt(entry.dataset.sessionStart));
     }
+    return;
+  }
+
+  const slMove = e.target.closest('.sl-move');
+  if (slMove) {
+    const entry = slMove.closest('.sl-entry');
+    showMoveDropdown(slMove, entry.dataset.taskId, parseInt(entry.dataset.sessionStart));
     return;
   }
 

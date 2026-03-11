@@ -2,6 +2,7 @@ import json
 import os
 import secrets
 import time
+import uuid as uuid_mod
 
 import stripe
 
@@ -68,6 +69,7 @@ def init_db():
         try:
             with psycopg2.connect(DATABASE_URL) as conn:
                 with conn.cursor() as cur:
+                    # ── Existing tables (unchanged) ──────────────────────────
                     cur.execute("""
                         CREATE TABLE IF NOT EXISTS users (
                             id            SERIAL PRIMARY KEY,
@@ -83,6 +85,11 @@ def init_db():
                             tasks_json TEXT NOT NULL DEFAULT '{"tasks":[]}'
                         )
                     """)
+                    # Plan B: mark which rows have been migrated to normalized tables.
+                    # The blob is never deleted — revert by pointing GET/POST back at user_data.
+                    cur.execute(
+                        "ALTER TABLE user_data ADD COLUMN IF NOT EXISTS migrated_at TIMESTAMPTZ"
+                    )
                     cur.execute("""
                         CREATE TABLE IF NOT EXISTS password_reset_tokens (
                             token      TEXT PRIMARY KEY,
@@ -97,6 +104,37 @@ def init_db():
                     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_current_period_end TIMESTAMPTZ")
                     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ")
                     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_comped BOOLEAN DEFAULT FALSE")
+
+                    # ── New normalized tables ────────────────────────────────
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS tasks (
+                            id      TEXT    NOT NULL,
+                            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                            name    TEXT    NOT NULL,
+                            PRIMARY KEY (id, user_id)
+                        )
+                    """)
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS sessions (
+                            id       TEXT   NOT NULL PRIMARY KEY,
+                            task_id  TEXT   NOT NULL,
+                            user_id  INTEGER NOT NULL,
+                            start_ts BIGINT NOT NULL,
+                            end_ts   BIGINT,
+                            FOREIGN KEY (task_id, user_id) REFERENCES tasks(id, user_id) ON DELETE CASCADE,
+                            UNIQUE (task_id, user_id, start_ts)
+                        )
+                    """)
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS later_items (
+                            id       TEXT    NOT NULL,
+                            user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                            text     TEXT    NOT NULL,
+                            position INTEGER NOT NULL DEFAULT 0,
+                            PRIMARY KEY (id, user_id)
+                        )
+                    """)
+                    cur.execute("CREATE INDEX IF NOT EXISTS sessions_user_start ON sessions(user_id, start_ts)")
             return
         except psycopg2.OperationalError:
             if attempt == 9:
@@ -104,9 +142,62 @@ def init_db():
             time.sleep(2 ** attempt)
 
 
+def migrate_blobs():
+    """
+    One-time migration: copy each user's JSON blob into normalized tables.
+    Runs on every startup but is a no-op for already-migrated users.
+    Safe to re-run: uses ON CONFLICT DO NOTHING / DO UPDATE.
+    Plan B: user_data rows are never deleted; revert by swapping GET/POST back to blob logic.
+    """
+    try:
+        with psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT user_id, tasks_json FROM user_data WHERE migrated_at IS NULL")
+                rows = cur.fetchall()
+    except Exception as e:
+        print(f"[migration] could not read user_data: {e}")
+        return
+
+    for row in rows:
+        uid = row["user_id"]
+        try:
+            payload = json.loads(row["tasks_json"] or '{"tasks":[]}')
+            with psycopg2.connect(DATABASE_URL) as conn:
+                with conn.cursor() as cur:
+                    for task in payload.get("tasks", []):
+                        cur.execute(
+                            "INSERT INTO tasks (id, user_id, name) VALUES (%s, %s, %s) "
+                            "ON CONFLICT (id, user_id) DO UPDATE SET name = EXCLUDED.name",
+                            (task["id"], uid, task["name"]),
+                        )
+                        for s in task.get("sessions", []):
+                            cur.execute(
+                                "INSERT INTO sessions (id, task_id, user_id, start_ts, end_ts) "
+                                "VALUES (%s, %s, %s, %s, %s) "
+                                "ON CONFLICT (task_id, user_id, start_ts) DO NOTHING",
+                                (str(uuid_mod.uuid4()), task["id"], uid, s["start"], s.get("end")),
+                            )
+                    for i, item in enumerate(payload.get("later", [])):
+                        cur.execute(
+                            "INSERT INTO later_items (id, user_id, text, position) "
+                            "VALUES (%s, %s, %s, %s) "
+                            "ON CONFLICT (id, user_id) DO NOTHING",
+                            (item["id"], uid, item["text"], i),
+                        )
+                    cur.execute(
+                        "UPDATE user_data SET migrated_at = NOW() WHERE user_id = %s",
+                        (uid,),
+                    )
+                conn.commit()
+            print(f"[migration] user {uid} migrated ok")
+        except Exception as e:
+            print(f"[migration] user {uid} FAILED: {e}")
+
+
 @app.on_event("startup")
 def startup():
     init_db()
+    migrate_blobs()
 
 
 def get_db():
@@ -251,10 +342,35 @@ def get_data(
     user_id: Annotated[int, Depends(current_user_id)],
     db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
 ):
-    db.execute("SELECT tasks_json FROM user_data WHERE user_id = %s", (user_id,))
-    row = db.fetchone()
-    tasks_json = row["tasks_json"] if row else '{"tasks":[]}'
-    return JSONResponse(content=json.loads(tasks_json))
+    db.execute("""
+        SELECT
+            t.id,
+            t.name,
+            COALESCE(
+                json_agg(
+                    json_build_object('start', s.start_ts, 'end', s.end_ts)
+                    ORDER BY s.start_ts ASC
+                ) FILTER (WHERE s.id IS NOT NULL),
+                '[]'::json
+            ) AS sessions
+        FROM tasks t
+        LEFT JOIN sessions s ON s.task_id = t.id AND s.user_id = t.user_id
+        WHERE t.user_id = %s
+        GROUP BY t.id, t.name
+        ORDER BY MAX(s.start_ts) DESC NULLS LAST
+    """, (user_id,))
+    tasks = [
+        {"id": r["id"], "name": r["name"], "sessions": r["sessions"] or []}
+        for r in db.fetchall()
+    ]
+
+    db.execute(
+        "SELECT id, text FROM later_items WHERE user_id = %s ORDER BY position",
+        (user_id,),
+    )
+    later = [{"id": r["id"], "text": r["text"]} for r in db.fetchall()]
+
+    return JSONResponse({"tasks": tasks, "later": later})
 
 
 @app.post("/data", status_code=204)
@@ -264,30 +380,76 @@ async def post_data(
     db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
 ):
     body = await request.body()
+    payload = json.loads(body)
+    tasks = payload.get("tasks", [])
+    later = payload.get("later", [])
+
+    # ── Sync tasks ───────────────────────────────────────────────────────────
+    incoming_task_ids = [t["id"] for t in tasks]
+    if incoming_task_ids:
+        # Delete tasks (and their sessions via CASCADE) no longer in the payload
+        db.execute(
+            "DELETE FROM tasks WHERE user_id = %s AND id != ALL(%s)",
+            (user_id, incoming_task_ids),
+        )
+    else:
+        db.execute("DELETE FROM tasks WHERE user_id = %s", (user_id,))
+
+    for task in tasks:
+        db.execute(
+            "INSERT INTO tasks (id, user_id, name) VALUES (%s, %s, %s) "
+            "ON CONFLICT (id, user_id) DO UPDATE SET name = EXCLUDED.name",
+            (task["id"], user_id, task["name"]),
+        )
+
+        # ── Sync sessions for this task ──────────────────────────────────────
+        incoming_starts = [s["start"] for s in task.get("sessions", [])]
+        if incoming_starts:
+            db.execute(
+                "DELETE FROM sessions WHERE task_id = %s AND user_id = %s AND start_ts != ALL(%s)",
+                (task["id"], user_id, incoming_starts),
+            )
+        else:
+            db.execute(
+                "DELETE FROM sessions WHERE task_id = %s AND user_id = %s",
+                (task["id"], user_id),
+            )
+
+        for s in task.get("sessions", []):
+            db.execute(
+                "INSERT INTO sessions (id, task_id, user_id, start_ts, end_ts) "
+                "VALUES (%s, %s, %s, %s, %s) "
+                "ON CONFLICT (task_id, user_id, start_ts) DO UPDATE SET end_ts = EXCLUDED.end_ts",
+                (str(uuid_mod.uuid4()), task["id"], user_id, s["start"], s.get("end")),
+            )
+
+    # ── Sync later items ─────────────────────────────────────────────────────
+    db.execute("DELETE FROM later_items WHERE user_id = %s", (user_id,))
+    for i, item in enumerate(later):
+        db.execute(
+            "INSERT INTO later_items (id, user_id, text, position) VALUES (%s, %s, %s, %s)",
+            (item["id"], user_id, item["text"], i),
+        )
+
+    # Keep blob in sync for Plan B rollback
     db.execute(
-        "INSERT INTO user_data (user_id, tasks_json) VALUES (%s, %s) "
+        "INSERT INTO user_data (user_id, tasks_json, migrated_at) VALUES (%s, %s, NOW()) "
         "ON CONFLICT (user_id) DO UPDATE SET tasks_json = EXCLUDED.tasks_json",
         (user_id, body.decode()),
     )
+
     return Response(status_code=204)
 
 
-def count_today_sessions(tasks_json: str) -> int:
-    from datetime import date
-    today = date.today().isoformat()
-    try:
-        tasks_data = json.loads(tasks_json)
-        count = 0
-        for task in tasks_data.get("tasks", []):
-            for session in task.get("sessions", []):
-                start_ts = session.get("start")
-                if start_ts:
-                    session_date = datetime.fromtimestamp(start_ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
-                    if session_date == today:
-                        count += 1
-        return count
-    except Exception:
-        return 0
+def count_today_sessions(user_id: int, db) -> int:
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    db.execute("""
+        SELECT COUNT(*) AS cnt FROM sessions
+        WHERE user_id = %s
+          AND to_char(to_timestamp(start_ts / 1000.0) AT TIME ZONE 'UTC', 'YYYY-MM-DD') = %s
+    """, (user_id, today))
+    row = db.fetchone()
+    return int(row["cnt"]) if row else 0
 
 
 @app.post("/sessions/start")
@@ -296,20 +458,15 @@ def session_start(
     db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
 ):
     db.execute(
-        "SELECT u.subscription_status, u.is_comped, ud.tasks_json "
-        "FROM users u LEFT JOIN user_data ud ON u.id = ud.user_id "
-        "WHERE u.id = %s",
+        "SELECT subscription_status, is_comped FROM users WHERE id = %s",
         (user_id,),
     )
     row = db.fetchone()
     if not row:
         raise HTTPException(status_code=404)
-    sub_status = row["subscription_status"] or "free"
-    is_comped = row["is_comped"] or False
-    if is_comped or sub_status == "active":
+    if row["is_comped"] or row["subscription_status"] == "active":
         return {"ok": True}
-    today_count = count_today_sessions(row["tasks_json"] or '{"tasks":[]}')
-    if today_count >= 5:
+    if count_today_sessions(user_id, db) >= 5:
         raise HTTPException(
             status_code=402,
             detail="You've reached your 5 free sessions for today. Upgrade for unlimited.",

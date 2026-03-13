@@ -1046,7 +1046,8 @@ function render() {
       </div>` : '';
 
     li.innerHTML = `
-      <div class="task-main">
+      <div class="task-main${isRecent ? ' not-expandable' : ''}">
+        <button class="t-play" data-id="${task.id}" tabindex="-1">▶</button>
         <span class="t-name">${esc(task.name)}</span>
         <span class="t-dot"></span>
         ${isRecent ? '' : (() => {
@@ -1241,22 +1242,21 @@ listEl.addEventListener('click', async e => {
   const delBtn = e.target.closest('.t-del');
   if (delBtn) { deleteTask(delBtn.dataset.id); return; }
 
-  const expandBtn = e.target.closest('.t-expand');
-  if (expandBtn) {
-    const row  = expandBtn.closest('.task-row');
-    const task = data.tasks.find(t => t.id === row?.dataset.id);
-    if (task) {
-      expanded.has(task.id) ? expanded.delete(task.id) : expanded.add(task.id);
-      render();
-    }
+  const playBtn = e.target.closest('.t-play');
+  if (playBtn) {
+    const task = data.tasks.find(t => t.id === playBtn.dataset.id);
+    if (task) { await startTask(task); searchEl.blur(); }
     return;
   }
 
   const main = e.target.closest('.task-main');
-  if (main) {
+  if (main && !main.classList.contains('not-expandable')) {
     const row  = main.closest('.task-row');
     const task = data.tasks.find(t => t.id === row?.dataset.id);
-    if (task) { await startTask(task); searchEl.blur(); }
+    if (task && task.sessions.length) {
+      expanded.has(task.id) ? expanded.delete(task.id) : expanded.add(task.id);
+      render();
+    }
   }
 });
 

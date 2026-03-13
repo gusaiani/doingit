@@ -350,6 +350,40 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.t-play {
+  position: absolute;
+  left: -44px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--sel);
+  color: var(--dim);
+  font-size: 13px;
+  border: none;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  padding-left: 2px; /* optical center for ▶ */
+}
+
+.task-main::after {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 0;
+  width: 12px;
+  height: 100%;
+}
+
+.task-row:hover .t-play { opacity: 1; }
+.task-main.not-expandable { cursor: default; }
+.t-play:hover { background: var(--border); color: var(--text); }
+
 
 .task-row.selected { background: var(--sel); }
 
@@ -362,6 +396,7 @@ body {
 }
 
 .task-main {
+  position: relative;
   display: flex;
   align-items: center;
   padding: 13px 0 13px 10px;
@@ -439,7 +474,6 @@ body {
 }
 
 .task-row:hover .t-expand { color: var(--dim); }
-.t-expand:hover { background: var(--sel); color: var(--text) !important; }
 
 .t-del {
   opacity: 0;

@@ -635,6 +635,18 @@ body {
   padding: 0;
   outline: none;
 }
+.sl-date-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--accent);
+  color: var(--accent);
+  font-family: var(--font);
+  font-size: 13px;
+  width: 120px;
+  padding: 0;
+  margin-right: 4px;
+  outline: none;
+}
 .sl-dash { color: var(--dim); }
 
 /* ── Total ── */

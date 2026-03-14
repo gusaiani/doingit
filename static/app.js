@@ -560,11 +560,15 @@ function toTimeInput(ts) {
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
-function fromTimeInput(timeStr, originalTs) {
+function toDateInput(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function fromDateTimeInput(dateStr, timeStr) {
+  const [y, mo, da] = dateStr.split('-').map(Number);
   const [h, m] = timeStr.split(':').map(Number);
-  const d = new Date(originalTs);
-  d.setHours(h, m, 0, 0);
-  return d.getTime();
+  return new Date(y, mo - 1, da, h, m, 0, 0).getTime();
 }
 
 function esc(s) {
@@ -1209,23 +1213,34 @@ function beginEditSession(entry, taskId, sessionStart) {
   const session = task?.sessions.find(s => s.start === sessionStart);
   if (!session || !session.end) return;
 
+  const crossDay = localDateStr(new Date(session.start)) !== localDateStr(new Date(session.end));
   const rangeEl = entry.querySelector('.sl-range');
-  rangeEl.innerHTML = `
-    <input class="sl-time-input" type="time" value="${toTimeInput(session.start)}" data-role="start">
-    <span class="sl-dash"> – </span>
-    <input class="sl-time-input" type="time" value="${toTimeInput(session.end)}" data-role="end">
-  `;
+  rangeEl.innerHTML = crossDay
+    ? `<input class="sl-date-input" type="date" value="${toDateInput(session.start)}" data-role="start-date">
+       <input class="sl-time-input" type="time" value="${toTimeInput(session.start)}" data-role="start">
+       <span class="sl-dash"> – </span>
+       <input class="sl-date-input" type="date" value="${toDateInput(session.end)}" data-role="end-date">
+       <input class="sl-time-input" type="time" value="${toTimeInput(session.end)}" data-role="end">`
+    : `<input class="sl-time-input" type="time" value="${toTimeInput(session.start)}" data-role="start">
+       <span class="sl-dash"> – </span>
+       <input class="sl-time-input" type="time" value="${toTimeInput(session.end)}" data-role="end">`;
   rangeEl.querySelector('[data-role="start"]').focus();
 
   let saved = false;
   function save() {
     if (saved) return;
     saved = true;
-    const startInput = rangeEl.querySelector('[data-role="start"]');
-    const endInput   = rangeEl.querySelector('[data-role="end"]');
+    const startInput     = rangeEl.querySelector('[data-role="start"]');
+    const endInput       = rangeEl.querySelector('[data-role="end"]');
+    const startDateInput = rangeEl.querySelector('[data-role="start-date"]');
+    const endDateInput   = rangeEl.querySelector('[data-role="end-date"]');
     if (!startInput || !endInput) return;
-    const newStart = fromTimeInput(startInput.value, session.start);
-    const newEnd   = fromTimeInput(endInput.value,   session.end);
+    const newStart = startDateInput
+      ? fromDateTimeInput(startDateInput.value, startInput.value)
+      : fromDateTimeInput(toDateInput(session.start), startInput.value);
+    const newEnd = endDateInput
+      ? fromDateTimeInput(endDateInput.value, endInput.value)
+      : fromDateTimeInput(toDateInput(session.end), endInput.value);
     if (newEnd > newStart) {
       session.start = newStart;
       session.end   = newEnd;

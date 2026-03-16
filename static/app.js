@@ -1307,8 +1307,7 @@ searchEl.addEventListener('keydown', async e => {
     if (selIdx >= 0) {
       task = tasks[selIdx];
     } else if (tasks.length > 0) {
-      const exact = tasks.find(t => t.name.toLowerCase() === q.toLowerCase());
-      task = exact ?? tasks[0];
+      task = tasks.find(t => t.name.toLowerCase() === q.toLowerCase());
     }
 
     if (!task && q) {

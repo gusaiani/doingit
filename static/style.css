@@ -408,6 +408,20 @@ body {
 
 .task-row.selected .task-main { padding-left: 13px; }
 
+.nav-highlight {
+  background: var(--sel);
+  position: relative;
+}
+
+.nav-highlight::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+}
+
 /* running indicator dot */
 .t-dot {
   width: 8px;

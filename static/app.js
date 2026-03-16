@@ -763,11 +763,98 @@ function liveUpdate() {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let selIdx  = -1;
+let navIdx  = -1;   // keyboard navigation index (-1 = inactive)
 let tasksVisible = localStorage.getItem('tt_tasks_visible') !== 'false';
 let weekVisible  = localStorage.getItem('tt_week_visible')  !== 'false';
 const expanded         = new Set();
 const expandedDays     = new Set();
 const expandedDayTasks = new Set();
+
+// ── Keyboard navigation ───────────────────────────────────────────────────────
+function navItems() {
+  const items = [];
+  items.push({ type: 'today' });
+  const tasks = filtered();
+  const listShown = tasksVisible || !!query();
+  if (listShown) {
+    tasks.forEach(t => items.push({ type: 'task', taskId: t.id }));
+  }
+  const days = weekPastDays().filter(d => dayTotalMs(d) > 0);
+  if (days.length > 0) {
+    items.push({ type: 'week' });
+    if (weekVisible) {
+      days.forEach(dateStr => {
+        items.push({ type: 'day', date: dateStr });
+        if (expandedDays.has(dateStr)) {
+          tasksForDay(dateStr).forEach(t => {
+            items.push({ type: 'day-task', date: dateStr, taskId: t.id });
+          });
+        }
+      });
+    }
+  }
+  return items;
+}
+
+function activeNavItem() {
+  if (navIdx < 0) return null;
+  const items = navItems();
+  return navIdx < items.length ? items[navIdx] : null;
+}
+
+function navToggle(item) {
+  if (item.type === 'today') {
+    tasksVisible = !tasksVisible;
+    localStorage.setItem('tt_tasks_visible', tasksVisible);
+  } else if (item.type === 'task') {
+    const task = data.tasks.find(t => t.id === item.taskId);
+    if (task && task.sessions.length) {
+      expanded.has(task.id) ? expanded.delete(task.id) : expanded.add(task.id);
+    }
+  } else if (item.type === 'week') {
+    weekVisible = !weekVisible;
+    localStorage.setItem('tt_week_visible', weekVisible);
+  } else if (item.type === 'day') {
+    expandedDays.has(item.date) ? expandedDays.delete(item.date) : expandedDays.add(item.date);
+  } else if (item.type === 'day-task') {
+    const dtKey = `${item.date}::${item.taskId}`;
+    expandedDayTasks.has(dtKey) ? expandedDayTasks.delete(dtKey) : expandedDayTasks.add(dtKey);
+  }
+  render();
+}
+
+function navExpand(item) {
+  if (item.type === 'today') { tasksVisible = true; localStorage.setItem('tt_tasks_visible', 'true'); }
+  else if (item.type === 'task') { expanded.add(item.taskId); }
+  else if (item.type === 'week') { weekVisible = true; localStorage.setItem('tt_week_visible', 'true'); }
+  else if (item.type === 'day') { expandedDays.add(item.date); }
+  else if (item.type === 'day-task') { expandedDayTasks.add(`${item.date}::${item.taskId}`); }
+  render();
+}
+
+function navCollapse(item) {
+  if (item.type === 'today') { tasksVisible = false; localStorage.setItem('tt_tasks_visible', 'false'); }
+  else if (item.type === 'task') { expanded.delete(item.taskId); }
+  else if (item.type === 'week') { weekVisible = false; localStorage.setItem('tt_week_visible', 'false'); }
+  else if (item.type === 'day') { expandedDays.delete(item.date); }
+  else if (item.type === 'day-task') { expandedDayTasks.delete(`${item.date}::${item.taskId}`); }
+  render();
+}
+
+async function navEnter(item) {
+  if (item.type === 'task' || item.type === 'day-task') {
+    const task = data.tasks.find(t => t.id === item.taskId);
+    if (task) await startTask(task);
+    render();
+  } else {
+    navToggle(item);
+  }
+}
+
+function scrollNavIntoView() {
+  const el = document.querySelector('.nav-highlight, .task-row.selected');
+  if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
 
 const searchEl   = document.getElementById('search');
 const listEl     = document.getElementById('task-list');
@@ -853,6 +940,7 @@ function renderHistory() {
   if (days.length === 0) { historyEl.innerHTML = ''; return; }
 
   const weekTotal = allWeekMs();
+  const nav = activeNavItem();
 
   const dayRows = weekVisible ? days.map(dateStr => {
     const isExp  = expandedDays.has(dateStr);
@@ -861,9 +949,10 @@ function renderHistory() {
     const name   = d.toLocaleDateString('en-US', { weekday: 'short' }).toLowerCase();
     const date   = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase();
     const tasks  = isExp ? tasksForDay(dateStr) : [];
+    const dayHL  = nav && nav.type === 'day' && nav.date === dateStr ? ' nav-highlight' : '';
 
     return `
-      <div class="day-row" data-date="${dateStr}">
+      <div class="day-row${dayHL}" data-date="${dateStr}">
         <span class="day-label"><span class="day-name">${name}</span> <span class="day-date">${date}</span></span>
         <span class="day-total">${fmt(total)}</span>
         <span class="day-chevron">${isExp ? '▲' : '▼'}</span>
@@ -872,6 +961,7 @@ function renderHistory() {
         tasks.map(t => {
           const dtKey = `${dateStr}::${t.id}`;
           const dtExp = expandedDayTasks.has(dtKey);
+          const dtHL  = nav && nav.type === 'day-task' && nav.date === dateStr && nav.taskId === t.id ? ' nav-highlight' : '';
           const sessionsHTML = dtExp ? `<div class="session-log open">${
             t.sessions.map(s => {
               const dur = s.end - s.start;
@@ -883,7 +973,7 @@ function renderHistory() {
             }).join('')
           }</div>` : '';
           return `
-          <div class="day-task-row${dtExp ? ' expanded' : ''}" data-task-id="${t.id}" data-date="${dateStr}">
+          <div class="day-task-row${dtExp ? ' expanded' : ''}${dtHL}" data-task-id="${t.id}" data-date="${dateStr}">
             <span class="dt-name">${esc(t.name)}</span>
             <span class="dt-time">${fmt(t.ms)}</span>
             <span class="dt-chevron">${dtExp ? '▲' : '▼'}</span>
@@ -894,8 +984,9 @@ function renderHistory() {
     `;
   }).join('') : '';
 
+  const weekHL = nav && nav.type === 'week' ? ' nav-highlight' : '';
   historyEl.innerHTML = `
-    <div class="total-row week-total-row">
+    <div class="total-row week-total-row${weekHL}">
       <span class="total-label">week</span>
       <span class="total-time" id="week-total-time">${fmt(weekTotal)}</span>
       <span class="week-chevron">${weekVisible ? '▲' : '▼'}</span>
@@ -1007,7 +1098,18 @@ function updateHintRow() {
     parts.push(`<kbd>↑↓</kbd> select`);
     parts.push(`<kbd>tab</kbd> log`);
   }
-  if (hasRunning) parts.push(`<kbd>esc</kbd> clear`);
+  if (navIdx >= 0) {
+    parts.length = 0;
+    parts.push(`<kbd>j/↓ k/↑</kbd> navigate`);
+    parts.push(`<kbd>space</kbd> toggle`);
+    parts.push(`<kbd>→/←</kbd> expand`);
+    parts.push(`<kbd><span class="char-up">↵</span></kbd> start`);
+    parts.push(`<kbd>n</kbd> search`);
+    parts.push(`<kbd>esc</kbd> exit`);
+  } else {
+    if (!searchFocused) parts.push(`<kbd>j/↓</kbd> navigate`);
+    if (hasRunning) parts.push(`<kbd>esc</kbd> clear`);
+  }
 
   hintRowEl.innerHTML = parts.join(' &nbsp;·&nbsp; ');
 }
@@ -1019,6 +1121,14 @@ function render() {
   const qLC    = q.toLowerCase();
   const tasks  = filtered();
   const running = runningTask();
+
+  // clamp nav index
+  if (navIdx >= 0) {
+    const items = navItems();
+    navIdx = Math.min(navIdx, items.length - 1);
+    if (navIdx < 0) navIdx = 0;
+  }
+  const nav = activeNavItem();
 
   // clamp selection
   selIdx = Math.max(-1, Math.min(selIdx, tasks.length - 1));
@@ -1044,7 +1154,7 @@ function render() {
 
   tasks.forEach((task, i) => {
     const isRunning  = task.sessions.some(s => !s.end);
-    const isSel      = i === selIdx;
+    const isSel      = i === selIdx || (nav && nav.type === 'task' && nav.taskId === task.id);
     const isExp      = expanded.has(task.id);
     const todaySess  = task.sessions.filter(s => isToday(s.start));
     const hasLog     = todaySess.length > 0;
@@ -1111,6 +1221,7 @@ function render() {
   // total row — always visible as the "today" anchor
   const listShown = tasksVisible || !!q;
   totalRow.style.display = 'flex';
+  totalRow.classList.toggle('nav-highlight', !!(nav && nav.type === 'today'));
   listEl.style.display   = listShown ? '' : 'none';
   if (!listShown && running) {
     const sessionStart = running.sessions.find(s => !s.end).start;
@@ -1150,7 +1261,7 @@ document.getElementById('search-create-hint').addEventListener('mousedown', asyn
 
 searchEl.addEventListener('input', () => { selIdx = -1; render(); });
 
-searchEl.addEventListener('focus', updateHintRow);
+searchEl.addEventListener('focus', () => { navIdx = -1; updateHintRow(); });
 searchEl.addEventListener('blur',  updateHintRow);
 
 searchEl.addEventListener('blur', () => {
@@ -1175,11 +1286,17 @@ searchEl.addEventListener('keydown', async e => {
 
   } else if (e.key === 'Tab') {
     e.preventDefault();
-    const idx  = selIdx >= 0 ? selIdx : 0;
-    const task = tasks[idx];
-    if (task) {
-      expanded.has(task.id) ? expanded.delete(task.id) : expanded.add(task.id);
-      render();
+    if (!q) {
+      // Empty search → enter nav mode
+      navIdx = 0;
+      searchEl.blur(); // blur handler will call render()
+    } else {
+      const idx  = selIdx >= 0 ? selIdx : 0;
+      const task = tasks[idx];
+      if (task) {
+        expanded.has(task.id) ? expanded.delete(task.id) : expanded.add(task.id);
+        render();
+      }
     }
 
   } else if (e.key === 'Enter') {
@@ -1263,6 +1380,15 @@ function beginEditSession(entry, taskId, sessionStart) {
 }
 
 // ── Click ─────────────────────────────────────────────────────────────────────
+// Clear nav mode on any mouse interaction
+document.addEventListener('mousedown', () => {
+  if (navIdx >= 0) {
+    navIdx = -1;
+    // Re-render on next frame so click handlers can finish with current DOM
+    requestAnimationFrame(() => render());
+  }
+});
+
 // Prevent mousedown from blurring the search input — click still fires normally
 listEl.addEventListener('mousedown', e => {
   if (!e.target.closest('.sl-time-input')) e.preventDefault();
@@ -1331,7 +1457,76 @@ document.addEventListener('keydown', async e => {
     document.activeElement.tagName === 'TEXTAREA' ||
     document.activeElement.isContentEditable
   );
+
+  // ── Nav mode active ──
+  if (!onInput && navIdx >= 0) {
+    const items = navItems();
+    const item  = items[navIdx];
+    if (!item) { navIdx = -1; render(); return; }
+
+    if (e.key === 'j' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      navIdx = Math.min(navIdx + 1, items.length - 1);
+      render();
+      scrollNavIntoView();
+      return;
+    }
+    if (e.key === 'k' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      navIdx = Math.max(navIdx - 1, 0);
+      render();
+      scrollNavIntoView();
+      return;
+    }
+    if (e.key === ' ') {
+      e.preventDefault();
+      navToggle(item);
+      scrollNavIntoView();
+      return;
+    }
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      navExpand(item);
+      scrollNavIntoView();
+      return;
+    }
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      navCollapse(item);
+      scrollNavIntoView();
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      await navEnter(item);
+      scrollNavIntoView();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      navIdx = -1;
+      render();
+      return;
+    }
+    if (e.key === 'n' || e.key === '/') {
+      e.preventDefault();
+      navIdx = -1;
+      searchEl.focus();
+      render();
+      return;
+    }
+    return; // swallow other keys in nav mode
+  }
+
+  // ── Enter nav mode from bare screen ──
   if (!onInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    if (e.key === 'j' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      navIdx = 0;
+      render();
+      scrollNavIntoView();
+      return;
+    }
     const digit = e.key === '0' ? 10 : parseInt(e.key);
     if (digit >= 1 && digit <= 10) {
       const task = filtered()[digit - 1];
@@ -1339,7 +1534,7 @@ document.addEventListener('keydown', async e => {
       return;
     }
   }
-  if (e.key === 'n' && !onInput) {
+  if ((e.key === 'n' || e.key === '/') && !onInput) {
     e.preventDefault();
     searchEl.focus();
     return;

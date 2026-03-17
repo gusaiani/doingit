@@ -1202,7 +1202,7 @@ function render() {
       const lastDate = localDateStr(new Date(last[0].start));
       return task.sessions.filter(s => localDateStr(new Date(s.start)) === lastDate);
     })();
-    const shownDate = hasLog ? 'today' : (() => {
+    const shownDate = hasLog ? '' : (() => {
       if (!shownSess.length) return '';
       const d = new Date(shownSess[0].start);
       return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toLowerCase();
@@ -1216,7 +1216,7 @@ function render() {
 
     const sessionHTML = !isRecent && isExp && shownSess.length ? `
       <div class="session-log open">
-        <div class="sl-date">${shownDate}</div>
+        ${shownDate ? `<div class="sl-date">${shownDate}</div>` : ''}
         ${shownSess.map(s => {
           const live = !s.end;
           const dur  = (s.end ?? Date.now()) - s.start;

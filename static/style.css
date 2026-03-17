@@ -535,7 +535,6 @@ body {
 .session-log {
   display: none;
   padding: 0 0 14px 10px;
-  border-top: 1px solid var(--border);
 }
 
 .session-log.open { display: block; }

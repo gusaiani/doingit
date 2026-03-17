@@ -198,11 +198,10 @@ body {
 .hd-running {
   font-size: 13px;
   color: var(--green);
-  opacity: 0;
-  transition: opacity 0.2s;
+  display: none;
 }
 
-.hd-running.visible { opacity: 1; }
+.hd-running.visible { display: inline; }
 
 .hd-pomodoro {
   background: none;

@@ -47,12 +47,19 @@ async function seed(page, tasks, opts = {}) {
   await page.goto(BASE);
   await page.evaluate(({ tasks, opts }) => {
     localStorage.removeItem('tt_token');
-    localStorage.setItem('tt_guest_tasks', JSON.stringify({ tasks }));
+    const store = { tasks };
+    if (opts.later) store.later = opts.later;
+    localStorage.setItem('tt_guest_tasks', JSON.stringify(store));
     localStorage.setItem('tt_tasks_visible', String(opts.tasksVisible ?? true));
     if (opts.weekVisible !== undefined) {
       localStorage.setItem('tt_week_visible', String(opts.weekVisible));
     } else {
       localStorage.removeItem('tt_week_visible');
+    }
+    if (opts.laterVisible !== undefined) {
+      localStorage.setItem('tt_later_visible', String(opts.laterVisible));
+    } else {
+      localStorage.removeItem('tt_later_visible');
     }
   }, { tasks, opts });
   await page.reload();
@@ -513,5 +520,209 @@ test.describe('Keyboard navigation', () => {
     // j should stay on WEEK (no more items after it)
     await page.keyboard.press('j');
     await expect(page.locator('.week-total-row')).toHaveClass(/nav-highlight/);
+  });
+
+  // ── Fluid nav: today → week → later ──────────────────────────────────────
+  test('Fluid nav flows from today tasks through week to later list', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(1)), pastSess(1)] },
+    ], {
+      later: [{ id: 'L1', text: 'Buy milk' }, { id: 'L2', text: 'Read book' }],
+    });
+    await blurAll(page);
+
+    await page.keyboard.press('j'); // TODAY
+    await expect(page.locator('#total-row')).toHaveClass(/nav-highlight/);
+
+    await page.keyboard.press('j'); // Alpha (task)
+    const alphaRow = page.locator('.task-row', { has: page.locator('.t-name:text-is("Alpha")') });
+    await expect(alphaRow).toHaveClass(/selected/);
+
+    await page.keyboard.press('j'); // WEEK
+    await expect(page.locator('.week-total-row')).toHaveClass(/nav-highlight/);
+
+    // Navigate past day rows
+    await page.keyboard.press('j'); // day row
+    await expect(page.locator('.day-row').first()).toHaveClass(/nav-highlight/);
+
+    await page.keyboard.press('j'); // LATER header
+    await expect(page.locator('#later-header')).toHaveClass(/nav-highlight/);
+
+    await page.keyboard.press('j'); // first later item (Read book = most recent)
+    await expect(page.locator('.later-item').first()).toHaveClass(/nav-highlight/);
+
+    await page.keyboard.press('j'); // second later item (Buy milk)
+    await expect(page.locator('.later-item').nth(1)).toHaveClass(/nav-highlight/);
+
+    // k goes back up
+    await page.keyboard.press('k'); // back to first later item
+    await expect(page.locator('.later-item').first()).toHaveClass(/nav-highlight/);
+
+    await page.keyboard.press('k'); // LATER header
+    await expect(page.locator('#later-header')).toHaveClass(/nav-highlight/);
+
+    await page.keyboard.press('k'); // day row
+    await expect(page.locator('.day-row').first()).toHaveClass(/nav-highlight/);
+  });
+
+  test('ArrowRight expands later list, ArrowLeft collapses', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(1))] },
+    ], {
+      later: [{ id: 'L1', text: 'Buy milk' }],
+      laterVisible: false,
+    });
+    await blurAll(page);
+
+    // Navigate to LATER header
+    await page.keyboard.press('j'); // TODAY
+    await page.keyboard.press('j'); // Alpha
+    await page.keyboard.press('j'); // LATER (no week since only today sessions)
+    await expect(page.locator('#later-header')).toHaveClass(/nav-highlight/);
+
+    // Later list should be collapsed
+    await expect(page.locator('#later-list')).toBeHidden();
+
+    // Expand
+    await page.keyboard.press('ArrowRight');
+    await expect(page.locator('#later-list')).toBeVisible();
+    await expect(page.locator('.later-item')).toHaveCount(1);
+
+    // Collapse
+    await page.keyboard.press('ArrowLeft');
+    await expect(page.locator('#later-list')).toBeHidden();
+  });
+
+  test('Space on later header toggles later list', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(1))] },
+    ], {
+      later: [{ id: 'L1', text: 'Buy milk' }],
+    });
+    await blurAll(page);
+
+    // Navigate to LATER header
+    await page.keyboard.press('j'); // TODAY
+    await page.keyboard.press('j'); // Alpha
+    await page.keyboard.press('j'); // LATER
+    await expect(page.locator('#later-header')).toHaveClass(/nav-highlight/);
+
+    // Collapse
+    await page.keyboard.press(' ');
+    await expect(page.locator('#later-list')).toBeHidden();
+
+    // Expand
+    await page.keyboard.press(' ');
+    await expect(page.locator('#later-list')).toBeVisible();
+  });
+
+  test('Collapsing later skips later items in nav order', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(1))] },
+    ], {
+      later: [{ id: 'L1', text: 'Buy milk' }, { id: 'L2', text: 'Read book' }],
+    });
+    await blurAll(page);
+
+    // Navigate to LATER header
+    await page.keyboard.press('j'); // TODAY
+    await page.keyboard.press('j'); // Alpha
+    await page.keyboard.press('j'); // LATER
+
+    // Collapse later
+    await page.keyboard.press('ArrowLeft');
+    await expect(page.locator('#later-list')).toBeHidden();
+
+    // j should stay on LATER (no more items after it)
+    await page.keyboard.press('j');
+    await expect(page.locator('#later-header')).toHaveClass(/nav-highlight/);
+  });
+
+  test('Enter on later item promotes it to an active task', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(1))] },
+    ], {
+      later: [{ id: 'L1', text: 'Buy milk' }],
+    });
+    await blurAll(page);
+
+    // Navigate to later item
+    await page.keyboard.press('j'); // TODAY
+    await page.keyboard.press('j'); // Alpha
+    await page.keyboard.press('j'); // LATER
+    await page.keyboard.press('j'); // Buy milk
+
+    await page.keyboard.press('Enter'); // promote to task
+
+    // Buy milk should now be running as a task
+    const running = await page.evaluate(() => {
+      const d = JSON.parse(localStorage.getItem('tt_guest_tasks'));
+      return d.tasks.some(t => t.name === 'Buy milk' && t.sessions.some(s => !s.end));
+    });
+    expect(running).toBe(true);
+
+    // Later list should no longer contain it
+    const laterCount = await page.evaluate(() => {
+      const d = JSON.parse(localStorage.getItem('tt_guest_tasks'));
+      return d.later.length;
+    });
+    expect(laterCount).toBe(0);
+  });
+
+  test('Later items render newest first', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(1))] },
+    ], {
+      later: [
+        { id: 'L1', text: 'First added' },
+        { id: 'L2', text: 'Second added' },
+        { id: 'L3', text: 'Third added' },
+      ],
+    });
+
+    // Third added (newest) should be first in the DOM
+    const firstText = await page.locator('.later-item').first().locator('.later-text').textContent();
+    expect(firstText).toBe('Third added');
+
+    const lastText = await page.locator('.later-item').last().locator('.later-text').textContent();
+    expect(lastText).toBe('First added');
+  });
+
+  test('Later chevron is right-aligned in header row', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(1))] },
+    ], {
+      later: [{ id: 'L1', text: 'Buy milk' }],
+    });
+
+    const header = page.locator('#later-header');
+    const chevron = header.locator('.later-chevron');
+
+    // Chevron should exist and be pushed to the right
+    await expect(chevron).toBeVisible();
+
+    // Chevron's right edge should be near the header's right edge
+    const headerBox = await header.boundingBox();
+    const chevronBox = await chevron.boundingBox();
+    const chevronRight = chevronBox.x + chevronBox.width;
+    const headerRight = headerBox.x + headerBox.width;
+    // Chevron should be within 20px of the right edge
+    expect(headerRight - chevronRight).toBeLessThan(20);
+  });
+
+  test('Click on later header toggles later list', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(1))] },
+    ], {
+      later: [{ id: 'L1', text: 'Buy milk' }],
+    });
+
+    await expect(page.locator('#later-list')).toBeVisible();
+
+    await page.locator('#later-header').click();
+    await expect(page.locator('#later-list')).toBeHidden();
+
+    await page.locator('#later-header').click();
+    await expect(page.locator('#later-list')).toBeVisible();
   });
 });

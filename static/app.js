@@ -769,6 +769,7 @@ let weekVisible  = localStorage.getItem('tt_week_visible')  !== 'false';
 const expanded         = new Set();
 const expandedDays     = new Set();
 const expandedDayTasks = new Set();
+let   laterVisible     = localStorage.getItem('tt_later_visible') !== 'false';
 
 // ── Keyboard navigation ───────────────────────────────────────────────────────
 function navItems() {
@@ -790,6 +791,14 @@ function navItems() {
             items.push({ type: 'day-task', date: dateStr, taskId: t.id });
           });
         }
+      });
+    }
+  }
+  if (data.later && data.later.length > 0) {
+    items.push({ type: 'later' });
+    if (laterVisible) {
+      [...data.later].reverse().forEach(item => {
+        items.push({ type: 'later-item', id: item.id });
       });
     }
   }
@@ -819,6 +828,9 @@ function navToggle(item) {
   } else if (item.type === 'day-task') {
     const dtKey = `${item.date}::${item.taskId}`;
     expandedDayTasks.has(dtKey) ? expandedDayTasks.delete(dtKey) : expandedDayTasks.add(dtKey);
+  } else if (item.type === 'later') {
+    laterVisible = !laterVisible;
+    localStorage.setItem('tt_later_visible', laterVisible);
   }
   render();
 }
@@ -829,6 +841,7 @@ function navExpand(item) {
   else if (item.type === 'week') { weekVisible = true; localStorage.setItem('tt_week_visible', 'true'); }
   else if (item.type === 'day') { expandedDays.add(item.date); }
   else if (item.type === 'day-task') { expandedDayTasks.add(`${item.date}::${item.taskId}`); }
+  else if (item.type === 'later') { laterVisible = true; localStorage.setItem('tt_later_visible', 'true'); }
   render();
 }
 
@@ -838,6 +851,7 @@ function navCollapse(item) {
   else if (item.type === 'week') { weekVisible = false; localStorage.setItem('tt_week_visible', 'false'); }
   else if (item.type === 'day') { expandedDays.delete(item.date); }
   else if (item.type === 'day-task') { expandedDayTasks.delete(`${item.date}::${item.taskId}`); }
+  else if (item.type === 'later') { laterVisible = false; localStorage.setItem('tt_later_visible', 'false'); }
   render();
 }
 
@@ -846,6 +860,8 @@ async function navEnter(item) {
     const task = data.tasks.find(t => t.id === item.taskId);
     if (task) await startTask(task);
     render();
+  } else if (item.type === 'later-item') {
+    await promoteToTask(item.id);
   } else {
     navToggle(item);
   }
@@ -1069,14 +1085,30 @@ async function promoteToTask(id) {
 }
 
 function renderLater() {
-  const ul = document.getElementById('later-list');
-  ul.innerHTML = data.later.map(item => `
-    <li class="later-item" data-id="${item.id}">
-      <span class="later-text">${esc(item.text)}</span>
-      <button class="later-promote" data-id="${item.id}" title="start task">▶</button>
-      <button class="later-del" data-id="${item.id}">✕</button>
-    </li>
-  `).join('');
+  const nav = activeNavItem();
+  const headerEl = document.getElementById('later-header');
+  const inputEl  = document.getElementById('later-input');
+  const ul       = document.getElementById('later-list');
+
+  const laterHL = nav && nav.type === 'later' ? ' nav-highlight' : '';
+  headerEl.className = laterHL.trim();
+  headerEl.innerHTML = `later <span class="later-chevron">${laterVisible ? '▲' : '▼'}</span>`;
+
+  inputEl.style.display = laterVisible ? '' : 'none';
+  ul.style.display      = laterVisible ? '' : 'none';
+
+  if (laterVisible) {
+    const items = [...data.later].reverse();
+    ul.innerHTML = items.map(item => {
+      const itemHL = nav && nav.type === 'later-item' && nav.id === item.id ? ' nav-highlight' : '';
+      return `
+      <li class="later-item${itemHL}" data-id="${item.id}">
+        <span class="later-text">${esc(item.text)}</span>
+        <button class="later-promote" data-id="${item.id}" title="start task">▶</button>
+        <button class="later-del" data-id="${item.id}">✕</button>
+      </li>`;
+    }).join('');
+  }
 }
 
 // ── Hint row ──────────────────────────────────────────────────────────────────
@@ -1566,6 +1598,13 @@ totalRow.addEventListener('click', e => {
     localStorage.setItem('tt_tasks_visible', tasksVisible);
     render();
   }
+});
+
+// ── Later header collapse/expand ──────────────────────────────────────────────
+document.getElementById('later-header').addEventListener('click', () => {
+  laterVisible = !laterVisible;
+  localStorage.setItem('tt_later_visible', laterVisible);
+  render();
 });
 
 // ── Later input ───────────────────────────────────────────────────────────────

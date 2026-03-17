@@ -893,6 +893,16 @@ body {
   padding: 0 0 8px 10px;
   margin-bottom: 10px;
   border-bottom: 2px solid var(--border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+
+.later-chevron {
+  font-size: 10px;
+  color: var(--dimmer);
 }
 
 #later-input {
@@ -922,6 +932,7 @@ body {
   padding: 6px 0 9px 10px;
   border-bottom: 1px solid var(--border);
   font-size: 14px;
+  position: relative;
 }
 
 .later-text {

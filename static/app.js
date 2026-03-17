@@ -1092,7 +1092,7 @@ function renderLater() {
 
   const laterHL = nav && nav.type === 'later' ? ' nav-highlight' : '';
   headerEl.className = laterHL.trim();
-  headerEl.innerHTML = `later <span class="later-chevron">${laterVisible ? '▲' : '▼'}</span>`;
+  headerEl.innerHTML = `<span class="later-label">later</span><span class="later-chevron">${laterVisible ? '▲' : '▼'}</span>`;
 
   inputEl.style.display = laterVisible ? '' : 'none';
   ul.style.display      = laterVisible ? '' : 'none';

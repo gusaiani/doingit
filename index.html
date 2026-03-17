@@ -92,6 +92,7 @@
     <span class="hd-logo">Doing It</span>
     <span class="hd-sep">/</span>
     <span class="hd-date" id="hd-date"></span>
+    <button class="hd-about" id="hd-about">about</button>
     <span class="hd-running" id="hd-running">● recording</span>
     <button class="hd-pomodoro" id="hd-pomodoro" title="Toggle pomodoro">🍅</button>
     <input class="hd-pomodoro-mins" id="hd-pomodoro-mins" type="number" min="1" max="60" value="25" title="Pomodoro minutes">
@@ -151,6 +152,35 @@
     <p class="upgrade-sub">Upgrade for unlimited sessions — 30-day free trial.</p>
     <button class="upgrade-cta" id="upgrade-cta">It's $1.49 a month…doing it</button>
     <button class="upgrade-dismiss" id="upgrade-dismiss">maybe later</button>
+  </div>
+</div>
+
+<div id="about-modal" style="display:none">
+  <div class="about-backdrop" id="about-backdrop"></div>
+  <div class="about-box">
+    <button class="about-close" id="about-close">✕</button>
+    <div class="about-logo">Doing It</div>
+    <p class="about-tagline">From to-do to done, tracked.</p>
+    <div class="about-body">
+      <p>Type a task name, press Enter, and the clock starts. Press Escape to stop. That's it.</p>
+      <p>No projects, no tags, no settings. Just a text box and a timer — like Notational Velocity for your workday.</p>
+      <p class="about-section-label">Good for</p>
+      <ul>
+        <li>Freelancers tracking billable hours</li>
+        <li>Makers who want to see where their day went</li>
+        <li>Anyone who's tried 10 time trackers and quit all of them</li>
+      </ul>
+      <p class="about-section-label">Features</p>
+      <ul>
+        <li>Instant search — find or create a task in one keystroke</li>
+        <li>Pomodoro timer built in</li>
+        <li>Full keyboard navigation (j/k, Enter, Escape)</li>
+        <li>Daily &amp; weekly history</li>
+        <li>"Later" list for things you'll get to</li>
+        <li>Works offline as a guest — sign up to sync</li>
+      </ul>
+      <p class="about-inspiration">Inspired by <a href="https://en.wikipedia.org/wiki/Notational_Velocity" target="_blank" rel="noopener">Notational Velocity</a> — the fastest way to capture is a single text field.</p>
+    </div>
   </div>
 </div>
 

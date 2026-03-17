@@ -1572,6 +1572,10 @@ document.addEventListener('keydown', async e => {
     return;
   }
   if (e.key !== 'Escape') return;
+  if (document.getElementById('about-modal').style.display !== 'none') {
+    hideAbout();
+    return;
+  }
   if (document.getElementById('auth-screen').style.display !== 'none') {
     hideAuth();
     return;
@@ -1627,6 +1631,13 @@ document.getElementById('hd-manage').addEventListener('click', openBillingPortal
 document.getElementById('billing-success-close').addEventListener('click', () => {
   document.getElementById('billing-success-banner').style.display = 'none';
 });
+
+// ── About modal ──────────────────────────────────────────────────────────────
+function showAbout()  { document.getElementById('about-modal').style.display = 'flex'; }
+function hideAbout()  { document.getElementById('about-modal').style.display = 'none'; }
+document.getElementById('hd-about').addEventListener('click', showAbout);
+document.getElementById('about-close').addEventListener('click', hideAbout);
+document.getElementById('about-backdrop').addEventListener('click', hideAbout);
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 window.onGoogleLibraryLoad = initGoogleButton; // fires when GIS script finishes loading

@@ -107,6 +107,7 @@ def init_db():
                     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_current_period_end TIMESTAMPTZ")
                     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ")
                     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_comped BOOLEAN DEFAULT FALSE")
+                    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS theme TEXT")
 
                     # ── New normalized tables ────────────────────────────────
                     cur.execute("""
@@ -373,7 +374,11 @@ def get_data(
     )
     later = [{"id": r["id"], "text": r["text"]} for r in db.fetchall()]
 
-    return JSONResponse({"tasks": tasks, "later": later})
+    db.execute("SELECT theme FROM users WHERE id = %s", (user_id,))
+    theme_row = db.fetchone()
+    theme = theme_row["theme"] if theme_row else None
+
+    return JSONResponse({"tasks": tasks, "later": later, "theme": theme})
 
 
 @app.post("/data", status_code=204)
@@ -441,6 +446,37 @@ async def post_data(
         (user_id, body.decode()),
     )
 
+    return Response(status_code=204)
+
+
+class PreferencesRequest(BaseModel):
+    theme: str | None = None
+
+
+VALID_THEMES = {"light", "dark"}
+
+
+@app.get("/preferences")
+def get_preferences(
+    user_id: Annotated[int, Depends(current_user_id)],
+    db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
+):
+    db.execute("SELECT theme FROM users WHERE id = %s", (user_id,))
+    row = db.fetchone()
+    if not row:
+        raise HTTPException(status_code=404)
+    return {"theme": row["theme"]}
+
+
+@app.put("/preferences", status_code=204)
+def put_preferences(
+    req: PreferencesRequest,
+    user_id: Annotated[int, Depends(current_user_id)],
+    db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
+):
+    if req.theme is not None and req.theme not in VALID_THEMES:
+        raise HTTPException(status_code=422, detail="theme must be 'light', 'dark', or null")
+    db.execute("UPDATE users SET theme = %s WHERE id = %s", (req.theme, user_id))
     return Response(status_code=204)
 
 

@@ -1284,6 +1284,7 @@ function render() {
 
     li.innerHTML = `
       <div class="task-main${isRecent ? ' not-expandable' : ''}">
+        <span class="t-shortcut">${i < 9 ? i + 1 : i === 9 ? 0 : ''}</span>
         <button class="t-play${isRunning ? ' pausing' : ''}" data-id="${task.id}" tabindex="-1">${isRunning ? '⏸' : '▶'}</button>
         <span class="t-name">${esc(task.name)}</span>
         <span class="t-dot"></span>

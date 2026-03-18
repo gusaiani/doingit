@@ -431,6 +431,20 @@ html[data-theme="system"] #auth-screen {
   height: 100%;
 }
 
+.t-shortcut {
+  position: absolute;
+  left: -44px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  text-align: center;
+  font-size: 11px;
+  font-family: var(--font);
+  color: var(--dimmer);
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.task-row:hover .t-shortcut { opacity: 0; }
 .task-row:hover .t-play { opacity: 1; }
 .t-play.pausing { background: var(--border); color: var(--text); font-size: 15px; padding-left: 0; }
 .task-main.not-expandable { cursor: default; }

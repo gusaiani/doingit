@@ -118,11 +118,11 @@ test.describe('Theme toggle', () => {
     await loadPage(page);
     const btn = page.locator('#theme-toggle');
 
-    // light mode (default) — shows sun icon
+    // light mode (default) — shows moon icon (action: go dark)
     let icon = await btn.locator('[data-icon]').getAttribute('data-icon');
     expect(icon).toBe('light');
 
-    // click → dark — shows moon icon
+    // click → dark — shows sun icon (action: go light)
     await btn.click();
     icon = await btn.locator('[data-icon]').getAttribute('data-icon');
     expect(icon).toBe('dark');

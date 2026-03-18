@@ -1175,6 +1175,7 @@ function updateHintRow() {
     const label = count === 1 ? '1' : `1-${last}`;
     parts.push(`<kbd>${label}</kbd> start`);
   }
+  if (!hasRunning) parts.push(`<kbd>c</kbd> continue`);
   parts.push(`<kbd>n</kbd> new`);
   parts.push(`<kbd>N</kbd> later`);
   if (searchFocused) {
@@ -1627,6 +1628,13 @@ document.addEventListener('keydown', async e => {
       if (task) { e.preventDefault(); await startTask(task); }
       return;
     }
+  }
+  if (e.key === 'c' && !onInput && !runningTask()) {
+    const last = data.tasks
+      .filter(t => t.sessions.length > 0)
+      .sort((a, b) => Math.max(...b.sessions.map(s => s.end ?? 0)) - Math.max(...a.sessions.map(s => s.end ?? 0)))[0];
+    if (last) { e.preventDefault(); await startTask(last); }
+    return;
   }
   if ((e.key === 'n' || e.key === '/') && !onInput) {
     e.preventDefault();

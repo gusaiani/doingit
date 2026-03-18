@@ -377,6 +377,42 @@ test.describe('Keyboard navigation', () => {
     expect(focused).toBe('search');
   });
 
+  // ── c continues last task ────────────────────────────────────────────────
+  test('c from bare screen resumes the most recently stopped task', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(3), hour)] },
+      { id: 'B', name: 'Bravo', sessions: [sess(todayAt(1), hour)] },
+    ]);
+    await blurAll(page);
+
+    // No task running — c should start the most recently ended task (Bravo)
+    await page.keyboard.press('c');
+
+    const running = await page.evaluate(() => {
+      const d = JSON.parse(localStorage.getItem('tt_guest_tasks'));
+      const t = d.tasks.find(t => t.sessions.some(s => !s.end));
+      return t?.name;
+    });
+    expect(running).toBe('Bravo');
+  });
+
+  test('c does nothing when a task is already running', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [{ start: todayAt(1), end: null }] },
+      { id: 'B', name: 'Bravo', sessions: [sess(todayAt(3), hour)] },
+    ]);
+    await blurAll(page);
+
+    // Alpha is already running — c should not change anything
+    await page.keyboard.press('c');
+
+    const running = await page.evaluate(() => {
+      const d = JSON.parse(localStorage.getItem('tt_guest_tasks'));
+      return d.tasks.filter(t => t.sessions.some(s => !s.end)).map(t => t.name);
+    });
+    expect(running).toEqual(['Alpha']);
+  });
+
   // ── Shift+N focuses later input ────────────────────────────────────────────
   test('Shift+N from bare screen focuses later input', async ({ page }) => {
     await seed(page, [

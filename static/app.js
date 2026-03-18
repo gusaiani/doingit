@@ -1,3 +1,47 @@
+// ── Theme ─────────────────────────────────────────────────────────────────────
+const THEME_KEY = 'tt_theme';
+const THEME_CYCLE = ['light', 'dark', 'system'];
+
+const THEME_ICONS = {
+  system: '<span data-icon="system" class="theme-system"><span class="theme-os-label">OS</span><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" /></svg></span>',
+  light:  '<svg data-icon="light" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" /></svg>',
+  dark:   '<svg data-icon="dark" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /></svg>',
+};
+
+function applyTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  const theme = saved || 'light';
+  document.documentElement.setAttribute('data-theme', theme);
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.innerHTML = THEME_ICONS[theme];
+}
+
+function cycleTheme() {
+  const current = localStorage.getItem(THEME_KEY) || 'light';
+  const idx = THEME_CYCLE.indexOf(current);
+  const next = THEME_CYCLE[(idx + 1) % THEME_CYCLE.length];
+  if (next === 'light') {
+    localStorage.removeItem(THEME_KEY);
+  } else {
+    localStorage.setItem(THEME_KEY, next);
+  }
+  applyTheme();
+  persistTheme();
+}
+
+function persistTheme() {
+  const token = localStorage.getItem('tt_token');
+  if (!token) return;
+  const theme = localStorage.getItem(THEME_KEY) || null;
+  fetch('/preferences', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({ theme }),
+  }).catch(() => {});
+}
+
+applyTheme();
+
 // ── Persistence ───────────────────────────────────────────────────────────────
 const GUEST_KEY        = 'tt_guest_tasks';
 const GUEST_TRIAL_KEY  = 'tt_guest_trial_start';
@@ -35,6 +79,13 @@ async function load() {
     }
     data = await r.json();
     data.later = data.later || [];
+    if (data.theme) {
+      localStorage.setItem(THEME_KEY, data.theme);
+    } else if (data.theme === null && localStorage.getItem(THEME_KEY)) {
+      // Server has no preference — keep local; push it up
+      persistTheme();
+    }
+    applyTheme();
   } catch { data = { tasks: [] }; }
   await fetchBillingStatus();
   showUserMode();
@@ -166,8 +217,8 @@ function loadGuestData() {
 
 function showGuestMode() {
   document.getElementById('guest-banner').style.display = 'block';
-  document.getElementById('hd-signin').style.display = '';
-  document.getElementById('hd-logout').style.display = 'none';
+  document.getElementById('header-signin').style.display = '';
+  document.getElementById('header-logout').style.display = 'none';
   subscriptionStatus = 'free';
   isComped = false;
   updateBillingUI();
@@ -175,8 +226,8 @@ function showGuestMode() {
 
 function showUserMode() {
   document.getElementById('guest-banner').style.display = 'none';
-  document.getElementById('hd-signin').style.display = 'none';
-  document.getElementById('hd-logout').style.display = '';
+  document.getElementById('header-signin').style.display = 'none';
+  document.getElementById('header-logout').style.display = '';
   updateBillingUI();
 }
 
@@ -197,9 +248,9 @@ async function fetchBillingStatus() {
 function updateBillingUI() {
   const token = localStorage.getItem('tt_token');
   const subscribed = subscriptionStatus === 'active' || isComped;
-  document.getElementById('hd-upgrade').style.display = (token && !subscribed)           ? '' : 'none';
-  document.getElementById('hd-manage').style.display  = (token && subscribed && !isComped) ? '' : 'none';
-  document.getElementById('hd-vip').style.display     = (token && isComped)               ? '' : 'none';
+  document.getElementById('header-upgrade').style.display = (token && !subscribed)           ? '' : 'none';
+  document.getElementById('header-manage').style.display  = (token && subscribed && !isComped) ? '' : 'none';
+  document.getElementById('header-vip').style.display     = (token && isComped)               ? '' : 'none';
 }
 
 function showUpgradeModal(message) {
@@ -433,13 +484,13 @@ function logout() {
   ensureTick();
 }
 
-document.getElementById('hd-logout').addEventListener('click', logout);
+document.getElementById('header-logout').addEventListener('click', logout);
 
 document.getElementById('guest-signup-btn').addEventListener('click', () => {
   authMode = 'signup'; showLoginView(); showAuth();
 });
 
-document.getElementById('hd-signin').addEventListener('click', () => {
+document.getElementById('header-signin').addEventListener('click', () => {
   authMode = 'login'; showLoginView(); showAuth();
 });
 
@@ -447,8 +498,8 @@ document.getElementById('hd-signin').addEventListener('click', () => {
 let pomodoroActive = localStorage.getItem('tt_pomodoro_active') === 'true';
 let pomodoroTimer  = null;
 
-const pomodoroBtn  = document.getElementById('hd-pomodoro');
-const pomodoroMins = document.getElementById('hd-pomodoro-mins');
+const pomodoroBtn  = document.getElementById('header-pomodoro');
+const pomodoroMins = document.getElementById('header-pomodoro-mins');
 pomodoroBtn.classList.toggle('active', pomodoroActive);
 
 // Persist the minutes value across sessions
@@ -875,8 +926,8 @@ function scrollNavIntoView() {
 const searchEl   = document.getElementById('search');
 const listEl     = document.getElementById('task-list');
 const totalRow   = document.getElementById('total-row');
-const hdRunning  = document.getElementById('hd-running');
-const hdDate     = document.getElementById('hd-date');
+const hdRunning  = document.getElementById('header-running');
+const hdDate     = document.getElementById('header-date');
 const historyEl  = document.getElementById('history');
 
 hdDate.textContent = new Date().toLocaleDateString('en-US', {
@@ -1626,8 +1677,8 @@ document.getElementById('later-input').addEventListener('blur', () => {});
 document.getElementById('upgrade-cta').addEventListener('click', startCheckout);
 document.getElementById('upgrade-dismiss').addEventListener('click', hideUpgradeModal);
 document.getElementById('upgrade-backdrop').addEventListener('click', hideUpgradeModal);
-document.getElementById('hd-upgrade').addEventListener('click', startCheckout);
-document.getElementById('hd-manage').addEventListener('click', openBillingPortal);
+document.getElementById('header-upgrade').addEventListener('click', startCheckout);
+document.getElementById('header-manage').addEventListener('click', openBillingPortal);
 document.getElementById('billing-success-close').addEventListener('click', () => {
   document.getElementById('billing-success-banner').style.display = 'none';
 });
@@ -1635,9 +1686,12 @@ document.getElementById('billing-success-close').addEventListener('click', () =>
 // ── About modal ──────────────────────────────────────────────────────────────
 function showAbout()  { document.getElementById('about-modal').style.display = 'flex'; }
 function hideAbout()  { document.getElementById('about-modal').style.display = 'none'; }
-document.getElementById('hd-about').addEventListener('click', showAbout);
+document.getElementById('header-about').addEventListener('click', showAbout);
 document.getElementById('about-close').addEventListener('click', hideAbout);
 document.getElementById('about-backdrop').addEventListener('click', hideAbout);
+
+// ── Theme toggle ─────────────────────────────────────────────────────────────
+document.getElementById('theme-toggle').addEventListener('click', cycleTheme);
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 window.onGoogleLibraryLoad = initGoogleButton; // fires when GIS script finishes loading

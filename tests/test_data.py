@@ -16,7 +16,7 @@ def test_post_without_auth_returns_403(client):
 def test_new_user_has_empty_task_list(client, alice):
     r = client.get("/data", headers=auth_headers(alice["token"]))
     assert r.status_code == 200
-    assert r.json() == {"tasks": [], "later": []}
+    assert r.json() == {"tasks": [], "later": [], "theme": None}
 
 
 def test_post_and_get_roundtrip(client, alice):
@@ -84,7 +84,7 @@ def test_data_is_isolated_between_users(client, alice, bob):
 
     # Bob sees his own empty list — not Alice's.
     r = client.get("/data", headers=auth_headers(bob["token"]))
-    assert r.json() == {"tasks": [], "later": []}
+    assert r.json() == {"tasks": [], "later": [], "theme": None}
 
     # Bob saves his own data — Alice's must be untouched.
     client.post("/data", content=json.dumps(bob_payload), headers=auth_headers(bob["token"]))

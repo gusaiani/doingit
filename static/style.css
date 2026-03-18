@@ -540,6 +540,7 @@ html[data-theme="system"] #auth-screen {
 }
 
 .task-row:hover .t-expand { color: var(--dim); }
+.t-expand:hover { background: var(--sel); color: var(--text) !important; }
 
 .t-del {
   opacity: 0;

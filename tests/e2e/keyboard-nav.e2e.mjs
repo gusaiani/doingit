@@ -207,12 +207,13 @@ test.describe('Keyboard navigation', () => {
     ], { weekVisible: false });
     await blurAll(page);
 
-    // Navigate to last item: TODAY → Alpha → (no week since weekVisible=false and no past sessions)
+    // Navigate to last item: TODAY → Alpha → LATER → later-input → stay
     await page.keyboard.press('j'); // TODAY
     await page.keyboard.press('j'); // Alpha
-    await page.keyboard.press('j'); // should stay on Alpha
-    const alphaRow = page.locator('.task-row', { has: page.locator('.t-name:text-is("Alpha")') });
-    await expect(alphaRow).toHaveClass(/selected/);
+    await page.keyboard.press('j'); // LATER
+    await page.keyboard.press('j'); // later-input
+    await page.keyboard.press('j'); // should stay on later-input
+    await expect(page.locator('#later-input')).toHaveClass(/nav-highlight/);
   });
 
   // ── ArrowDown/ArrowUp work the same as j/k ─────────────────────────────────
@@ -601,9 +602,9 @@ test.describe('Keyboard navigation', () => {
     await page.keyboard.press('ArrowLeft');
     await expect(page.locator('.day-row')).toHaveCount(0);
 
-    // j should stay on WEEK (no more items after it)
+    // j should move to LATER (next section after collapsed week)
     await page.keyboard.press('j');
-    await expect(page.locator('.week-total-row')).toHaveClass(/nav-highlight/);
+    await expect(page.locator('#later-header')).toHaveClass(/nav-highlight/);
   });
 
   // ── Fluid nav: today → week → later ──────────────────────────────────────
@@ -632,6 +633,9 @@ test.describe('Keyboard navigation', () => {
     await page.keyboard.press('j'); // LATER header
     await expect(page.locator('#later-header')).toHaveClass(/nav-highlight/);
 
+    await page.keyboard.press('j'); // later-input
+    await expect(page.locator('#later-input')).toHaveClass(/nav-highlight/);
+
     await page.keyboard.press('j'); // first later item (Read book = most recent)
     await expect(page.locator('.later-item').first()).toHaveClass(/nav-highlight/);
 
@@ -641,6 +645,9 @@ test.describe('Keyboard navigation', () => {
     // k goes back up
     await page.keyboard.press('k'); // back to first later item
     await expect(page.locator('.later-item').first()).toHaveClass(/nav-highlight/);
+
+    await page.keyboard.press('k'); // later-input
+    await expect(page.locator('#later-input')).toHaveClass(/nav-highlight/);
 
     await page.keyboard.press('k'); // LATER header
     await expect(page.locator('#later-header')).toHaveClass(/nav-highlight/);
@@ -734,6 +741,7 @@ test.describe('Keyboard navigation', () => {
     await page.keyboard.press('j'); // TODAY
     await page.keyboard.press('j'); // Alpha
     await page.keyboard.press('j'); // LATER
+    await page.keyboard.press('j'); // later-input
     await page.keyboard.press('j'); // Buy milk
 
     await page.keyboard.press('Enter'); // promote to task
@@ -808,5 +816,72 @@ test.describe('Keyboard navigation', () => {
 
     await page.locator('#later-header').click();
     await expect(page.locator('#later-list')).toBeVisible();
+  });
+
+  // ── Later input navigation ─────────────────────────────────────────────────
+  test('Enter on later-input row focuses the later input', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(1))] },
+    ]);
+    await blurAll(page);
+
+    // Navigate to later-input: TODAY → Alpha → LATER → later-input
+    await page.keyboard.press('j'); // TODAY
+    await page.keyboard.press('j'); // Alpha
+    await page.keyboard.press('j'); // LATER
+    await page.keyboard.press('j'); // later-input
+    await expect(page.locator('#later-input')).toHaveClass(/nav-highlight/);
+
+    await page.keyboard.press('Enter');
+    const focused = await page.evaluate(() => document.activeElement?.id);
+    expect(focused).toBe('later-input');
+  });
+
+  test('Escape on later-input row stays highlighted', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(1))] },
+    ]);
+    await blurAll(page);
+
+    // Navigate to later-input
+    await page.keyboard.press('j'); // TODAY
+    await page.keyboard.press('j'); // Alpha
+    await page.keyboard.press('j'); // LATER
+    await page.keyboard.press('j'); // later-input
+
+    await page.keyboard.press('Escape');
+    // Should still be highlighted (not exit nav mode)
+    await expect(page.locator('#later-input')).toHaveClass(/nav-highlight/);
+  });
+
+  test('Later input row is navigable even with no later items', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(1))] },
+    ]);
+    await blurAll(page);
+
+    // Navigate: TODAY → Alpha → LATER → later-input
+    await page.keyboard.press('j'); // TODAY
+    await page.keyboard.press('j'); // Alpha
+    await page.keyboard.press('j'); // LATER
+    await expect(page.locator('#later-header')).toHaveClass(/nav-highlight/);
+
+    await page.keyboard.press('j'); // later-input
+    await expect(page.locator('#later-input')).toHaveClass(/nav-highlight/);
+  });
+
+  test('Creating a task from search keeps input focused', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(1))] },
+    ]);
+
+    await page.locator('#search').focus();
+    await page.keyboard.type('New task');
+    await page.keyboard.press('Enter');
+
+    // Input should be cleared but still focused
+    await expect(page.locator('#search')).toHaveValue('');
+    const focused = await page.evaluate(() => document.activeElement?.id);
+    expect(focused).toBe('search');
   });
 });

@@ -884,4 +884,30 @@ test.describe('Keyboard navigation', () => {
     const focused = await page.evaluate(() => document.activeElement?.id);
     expect(focused).toBe('search');
   });
+
+  test('Escape from focused later input blurs and re-enters nav mode', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(1))] },
+    ]);
+    await blurAll(page);
+
+    // Navigate to later-input and press Enter to focus it
+    await page.keyboard.press('j'); // TODAY
+    await page.keyboard.press('j'); // Alpha
+    await page.keyboard.press('j'); // LATER
+    await page.keyboard.press('j'); // later-input
+    await page.keyboard.press('Enter'); // focus the input
+    const focused = await page.evaluate(() => document.activeElement?.id);
+    expect(focused).toBe('later-input');
+
+    // Press Escape — should blur and highlight the row for further nav
+    await page.keyboard.press('Escape');
+    const focusedAfter = await page.evaluate(() => document.activeElement?.id);
+    expect(focusedAfter).not.toBe('later-input');
+    await expect(page.locator('#later-input')).toHaveClass(/nav-highlight/);
+
+    // Should be able to navigate up from here
+    await page.keyboard.press('k'); // LATER header
+    await expect(page.locator('#later-header')).toHaveClass(/nav-highlight/);
+  });
 });

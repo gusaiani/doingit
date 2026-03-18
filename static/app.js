@@ -1175,7 +1175,7 @@ function updateHintRow() {
     const label = count === 1 ? '1' : `1-${last}`;
     parts.push(`<kbd>${label}</kbd> start`);
   }
-  parts.push(`<kbd>n</kbd> new`);
+  parts.push(`<kbd>N</kbd> new`);
   if (searchFocused) {
     parts.push(`<kbd><span class="char-up">↵</span></kbd> start / stop`);
     parts.push(`<kbd>↑↓</kbd> select`);
@@ -1187,7 +1187,7 @@ function updateHintRow() {
     parts.push(`<kbd>space</kbd> toggle`);
     parts.push(`<kbd>→/←</kbd> expand`);
     parts.push(`<kbd><span class="char-up">↵</span></kbd> start`);
-    parts.push(`<kbd>n</kbd> search`);
+    parts.push(`<kbd>N</kbd> search`);
     parts.push(`<kbd>esc</kbd> exit`);
   } else {
     if (!searchFocused) parts.push(`<kbd>j/↓</kbd> navigate`);
@@ -1591,10 +1591,11 @@ document.addEventListener('keydown', async e => {
       render();
       return;
     }
-    if (e.key === 'n' || e.key === '/') {
+    if (e.key === 'N' || e.key === '/') {
       e.preventDefault();
       navIdx = -1;
       searchEl.focus();
+      searchEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       render();
       return;
     }
@@ -1617,9 +1618,10 @@ document.addEventListener('keydown', async e => {
       return;
     }
   }
-  if ((e.key === 'n' || e.key === '/') && !onInput) {
+  if ((e.key === 'N' || e.key === '/') && !onInput) {
     e.preventDefault();
     searchEl.focus();
+    searchEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     return;
   }
   if (e.key !== 'Escape') return;

@@ -1702,6 +1702,13 @@ document.getElementById('later-input').addEventListener('keydown', e => {
     const val = e.target.value.trim();
     if (val) { addLaterItem(val); e.target.value = ''; }
   }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.target.blur();
+    const items = navItems();
+    const idx = items.findIndex(i => i.type === 'later-input');
+    if (idx >= 0) { navIdx = idx; render(); }
+  }
 });
 
 // Prevent later-input blur from interfering with task list focus

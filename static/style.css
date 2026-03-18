@@ -999,7 +999,7 @@ html[data-theme="system"] #auth-screen {
   font-size: 14px;
   padding: 14px 0 14px 10px;
   caret-color: var(--accent);
-  margin-bottom: 4px;
+  margin-bottom: 0;
   transition: border-color 0.15s;
 }
 

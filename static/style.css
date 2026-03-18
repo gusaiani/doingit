@@ -955,7 +955,7 @@ html[data-theme="system"] #auth-screen {
   align-items: center;
   gap: 14px;
   padding: 6px 0 6px 10px;
-  margin-bottom: 10px;
+  margin-bottom: 0;
   border-bottom: 2px solid var(--border);
   cursor: pointer;
   user-select: none;
@@ -997,7 +997,7 @@ html[data-theme="system"] #auth-screen {
   color: var(--text);
   font-family: var(--font);
   font-size: 14px;
-  padding: 6px 0 14px 10px;
+  padding: 14px 0 14px 10px;
   caret-color: var(--accent);
   margin-bottom: 4px;
   transition: border-color 0.15s;

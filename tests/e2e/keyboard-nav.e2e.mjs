@@ -377,6 +377,54 @@ test.describe('Keyboard navigation', () => {
     expect(focused).toBe('search');
   });
 
+  // ── Shift+N focuses later input ────────────────────────────────────────────
+  test('Shift+N from bare screen focuses later input', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(1))] },
+    ], {
+      later: [{ id: 'L1', text: 'Buy milk' }],
+    });
+    await blurAll(page);
+
+    await page.keyboard.press('Shift+N');
+    const focused = await page.evaluate(() => document.activeElement?.id);
+    expect(focused).toBe('later-input');
+  });
+
+  test('Shift+N from nav mode exits nav and focuses later input', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(1))] },
+    ], {
+      later: [{ id: 'L1', text: 'Buy milk' }],
+    });
+    await blurAll(page);
+
+    await page.keyboard.press('j');
+    await expect(page.locator('#total-row')).toHaveClass(/nav-highlight/);
+
+    await page.keyboard.press('Shift+N');
+    await expect(page.locator('#total-row')).not.toHaveClass(/nav-highlight/);
+    const focused = await page.evaluate(() => document.activeElement?.id);
+    expect(focused).toBe('later-input');
+  });
+
+  test('Shift+N expands later section if collapsed', async ({ page }) => {
+    await seed(page, [
+      { id: 'A', name: 'Alpha', sessions: [sess(todayAt(1))] },
+    ], {
+      later: [{ id: 'L1', text: 'Buy milk' }],
+      laterVisible: false,
+    });
+    await blurAll(page);
+
+    await expect(page.locator('#later-list')).toBeHidden();
+
+    await page.keyboard.press('Shift+N');
+    await expect(page.locator('#later-list')).toBeVisible();
+    const focused = await page.evaluate(() => document.activeElement?.id);
+    expect(focused).toBe('later-input');
+  });
+
   // ── Week navigation ─────────────────────────────────────────────────────────
   test('Navigate to WEEK row and day rows', async ({ page }) => {
     await seed(page, [

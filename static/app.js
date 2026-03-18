@@ -845,9 +845,10 @@ function navItems() {
       });
     }
   }
-  if (data.later && data.later.length > 0) {
-    items.push({ type: 'later' });
-    if (laterVisible) {
+  items.push({ type: 'later' });
+  if (laterVisible) {
+    items.push({ type: 'later-input' });
+    if (data.later && data.later.length > 0) {
       [...data.later].reverse().forEach(item => {
         items.push({ type: 'later-item', id: item.id });
       });
@@ -911,6 +912,8 @@ async function navEnter(item) {
     const task = data.tasks.find(t => t.id === item.taskId);
     if (task) await startTask(task);
     render();
+  } else if (item.type === 'later-input') {
+    document.getElementById('later-input').focus();
   } else if (item.type === 'later-item') {
     await promoteToTask(item.id);
   } else {
@@ -1145,7 +1148,9 @@ function renderLater() {
   headerEl.className = laterHL.trim();
   headerEl.innerHTML = `<span class="later-label">later</span><span class="later-chevron">${laterVisible ? '▼' : '▶'}</span>`;
 
+  const inputHL = nav && nav.type === 'later-input';
   inputEl.style.display = laterVisible ? '' : 'none';
+  inputEl.classList.toggle('nav-highlight', !!inputHL);
   ul.style.display      = laterVisible ? '' : 'none';
 
   if (laterVisible) {
@@ -1590,6 +1595,7 @@ document.addEventListener('keydown', async e => {
     }
     if (e.key === 'Escape') {
       e.preventDefault();
+      if (item.type === 'later-input') return; // stay highlighted
       navIdx = -1;
       render();
       return;

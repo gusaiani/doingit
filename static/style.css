@@ -954,12 +954,13 @@ html[data-theme="system"] #auth-screen {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 0 0 8px 10px;
+  padding: 6px 0 6px 10px;
   margin-bottom: 10px;
   border-bottom: 2px solid var(--border);
   cursor: pointer;
   user-select: none;
   position: relative;
+  min-height: 28px;
 }
 
 .later-label {
@@ -1003,6 +1004,7 @@ html[data-theme="system"] #auth-screen {
 }
 
 #later-input:focus { border-bottom-color: var(--accent); }
+#later-input.nav-highlight { background: var(--sel); box-shadow: inset 3px 0 0 var(--accent); }
 #later-input::placeholder { color: var(--dimmer); }
 
 #later-list { list-style: none; }

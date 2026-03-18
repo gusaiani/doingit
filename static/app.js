@@ -4,8 +4,8 @@ const THEME_CYCLE = ['light', 'dark', 'system'];
 
 const THEME_ICONS = {
   system: '<span data-icon="system" class="theme-system"><span class="theme-os-label">OS</span><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" /></svg></span>',
-  light:  '<svg data-icon="light" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" /></svg>',
-  dark:   '<svg data-icon="dark" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /></svg>',
+  light:  '<svg data-icon="light" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /></svg>',
+  dark:   '<svg data-icon="dark" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" /></svg>',
 };
 
 function applyTheme() {
@@ -1022,7 +1022,7 @@ function renderHistory() {
       <div class="day-row${dayHL}" data-date="${dateStr}">
         <span class="day-label"><span class="day-name">${name}</span> <span class="day-date">${date}</span></span>
         <span class="day-total">${fmt(total)}</span>
-        <span class="day-chevron">${isExp ? '▲' : '▼'}</span>
+        <span class="day-chevron">${isExp ? '▼' : '▶'}</span>
       </div>
       ${isExp ? `<div class="day-tasks">${
         tasks.map(t => {
@@ -1043,7 +1043,7 @@ function renderHistory() {
           <div class="day-task-row${dtExp ? ' expanded' : ''}${dtHL}" data-task-id="${t.id}" data-date="${dateStr}">
             <span class="dt-name">${esc(t.name)}</span>
             <span class="dt-time">${fmt(t.ms)}</span>
-            <span class="dt-chevron">${dtExp ? '▲' : '▼'}</span>
+            <span class="dt-chevron">${dtExp ? '▼' : '▶'}</span>
             <button class="dt-del" tabindex="-1">✕</button>
           </div>${sessionsHTML}`;
         }).join('')
@@ -1056,7 +1056,7 @@ function renderHistory() {
     <div class="total-row week-total-row${weekHL}">
       <span class="total-label">week</span>
       <span class="total-time" id="week-total-time">${fmt(weekTotal)}</span>
-      <span class="week-chevron">${weekVisible ? '▲' : '▼'}</span>
+      <span class="week-chevron">${weekVisible ? '▼' : '▶'}</span>
     </div>
   ` + dayRows;
 }
@@ -1143,7 +1143,7 @@ function renderLater() {
 
   const laterHL = nav && nav.type === 'later' ? ' nav-highlight' : '';
   headerEl.className = laterHL.trim();
-  headerEl.innerHTML = `<span class="later-label">later</span><span class="later-chevron">${laterVisible ? '▲' : '▼'}</span>`;
+  headerEl.innerHTML = `<span class="later-label">later</span><span class="later-chevron">${laterVisible ? '▼' : '▶'}</span>`;
 
   inputEl.style.display = laterVisible ? '' : 'none';
   ul.style.display      = laterVisible ? '' : 'none';
@@ -1293,7 +1293,7 @@ function render() {
           }
           return `<span class="t-time">${fmt(displayMs)}</span>`;
         })()}
-        ${isRecent ? '' : `<span class="t-expand">${task.sessions.length ? (isExp ? '▲' : '▼') : ''}</span>`}
+        ${isRecent ? '' : `<span class="t-expand">${task.sessions.length ? (isExp ? '▼' : '▶') : ''}</span>`}
         <button class="t-del" data-id="${task.id}" tabindex="-1">✕</button>
       </div>
       ${sessionHTML}
@@ -1321,7 +1321,7 @@ function render() {
     totalRow.innerHTML = `
       <span class="total-label">today</span>
       <span class="total-time" id="total-time">${fmt(allTodayMs())}</span>
-      <span class="total-expand">${listShown ? '▲' : '▼'}</span>`;
+      <span class="total-expand">${listShown ? '▼' : '▶'}</span>`;
   }
 
   renderHistory();

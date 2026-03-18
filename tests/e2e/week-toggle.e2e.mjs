@@ -57,34 +57,34 @@ async function seedWithHistory(page, weekVisibleOverride) {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 test.describe('Week toggle', () => {
 
-  test('WEEK row renders with ▲ and day rows are visible by default', async ({ page }) => {
+  test('WEEK row renders with ▼ and day rows are visible by default', async ({ page }) => {
     await seedWithHistory(page);
 
     const chevron = page.locator('.week-chevron');
     await expect(chevron).toBeVisible();
-    await expect(chevron).toHaveText('▲');
+    await expect(chevron).toHaveText('▼');
 
     await expect(page.locator('.day-row').first()).toBeVisible();
   });
 
-  test('Clicking chevron hides day rows and flips to ▼', async ({ page }) => {
+  test('Clicking chevron hides day rows and flips to ▶', async ({ page }) => {
     await seedWithHistory(page);
 
     await page.locator('.week-chevron').click();
 
-    await expect(page.locator('.week-chevron')).toHaveText('▼');
+    await expect(page.locator('.week-chevron')).toHaveText('▶');
     await expect(page.locator('.day-row')).toHaveCount(0);
   });
 
-  test('Clicking chevron again shows day rows and flips back to ▲', async ({ page }) => {
+  test('Clicking chevron again shows day rows and flips back to ▼', async ({ page }) => {
     await seedWithHistory(page);
 
     const chevron = page.locator('.week-chevron');
     await chevron.click();
-    await expect(chevron).toHaveText('▼');
+    await expect(chevron).toHaveText('▶');
 
     await chevron.click();
-    await expect(chevron).toHaveText('▲');
+    await expect(chevron).toHaveText('▼');
     await expect(page.locator('.day-row').first()).toBeVisible();
   });
 
@@ -92,12 +92,12 @@ test.describe('Week toggle', () => {
     await seedWithHistory(page);
 
     await page.locator('.week-chevron').click();
-    await expect(page.locator('.week-chevron')).toHaveText('▼');
+    await expect(page.locator('.week-chevron')).toHaveText('▶');
 
     await page.reload();
     await page.waitForSelector('#task-list', { state: 'visible', timeout: 5000 });
 
-    await expect(page.locator('.week-chevron')).toHaveText('▼');
+    await expect(page.locator('.week-chevron')).toHaveText('▶');
     await expect(page.locator('.day-row')).toHaveCount(0);
   });
 
@@ -107,7 +107,7 @@ test.describe('Week toggle', () => {
     await page.reload();
     await page.waitForSelector('#task-list', { state: 'visible', timeout: 5000 });
 
-    await expect(page.locator('.week-chevron')).toHaveText('▲');
+    await expect(page.locator('.week-chevron')).toHaveText('▼');
     await expect(page.locator('.day-row').first()).toBeVisible();
   });
 

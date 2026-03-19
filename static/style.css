@@ -193,6 +193,7 @@ html[data-theme="system"] #auth-screen {
 
 /* ── App ── */
 #app {
+  position: relative;
   width: 100%;
   max-width: 760px;
 }
@@ -1109,12 +1110,9 @@ html[data-theme="system"] #auth-screen {
 .header-upgrade { color: var(--accent) !important; }
 .header-manage  { color: var(--green)  !important; }
 .theme-bar {
-  position: fixed;
+  position: absolute;
   top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
-  max-width: 760px;
+  right: 0;
   display: flex;
   justify-content: flex-end;
   padding: 0;

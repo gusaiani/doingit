@@ -54,7 +54,7 @@ html, body {
 body {
   display: flex;
   justify-content: center;
-  padding: 56px 24px 118px;
+  padding: 11px 24px 118px;
 }
 
 /* ── Auth Screen ── */
@@ -1110,12 +1110,12 @@ html[data-theme="system"] #auth-screen {
 .header-upgrade { color: var(--accent) !important; }
 .header-manage  { color: var(--green)  !important; }
 .theme-bar {
-  position: absolute;
+  position: static;
   top: 10px;
   right: 0;
   display: flex;
   justify-content: flex-end;
-  padding: 0;
+  padding: 0 0 40px;
   z-index: 50;
   pointer-events: none;
 }

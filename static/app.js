@@ -1027,7 +1027,7 @@ function renderHistory() {
       <div class="day-row${dayHL}" data-date="${dateStr}">
         <span class="day-label"><span class="day-name">${name}</span> <span class="day-date">${date}</span></span>
         <span class="day-total">${fmt(total)}</span>
-        <span class="day-chevron">${isExp ? '▼' : '▶'}</span>
+        <span class="day-chevron${isExp ? ' expanded' : ''}"></span>
       </div>
       ${isExp ? `<div class="day-tasks">${
         tasks.map(t => {
@@ -1048,7 +1048,7 @@ function renderHistory() {
           <div class="day-task-row${dtExp ? ' expanded' : ''}${dtHL}" data-task-id="${t.id}" data-date="${dateStr}">
             <span class="dt-name">${esc(t.name)}</span>
             <span class="dt-time">${fmt(t.ms)}</span>
-            <span class="dt-chevron">${dtExp ? '▼' : '▶'}</span>
+            <span class="dt-chevron${dtExp ? ' expanded' : ''}"></span>
             <button class="dt-del" tabindex="-1">✕</button>
           </div>${sessionsHTML}`;
         }).join('')
@@ -1061,7 +1061,7 @@ function renderHistory() {
     <div class="total-row week-total-row${weekHL}">
       <span class="total-label">week</span>
       <span class="total-time" id="week-total-time">${fmt(weekTotal)}</span>
-      <span class="week-chevron">${weekVisible ? '▼' : '▶'}</span>
+      <span class="week-chevron${weekVisible ? ' expanded' : ''}"></span>
     </div>
   ` + dayRows;
 }
@@ -1148,7 +1148,7 @@ function renderLater() {
 
   const laterHL = nav && nav.type === 'later' ? ' nav-highlight' : '';
   headerEl.className = laterHL.trim();
-  headerEl.innerHTML = `<span class="later-label">later</span><span class="later-chevron">${laterVisible ? '▼' : '▶'}</span>`;
+  headerEl.innerHTML = `<span class="later-label">later</span><span class="later-chevron${laterVisible ? ' expanded' : ''}"></span>`;
 
   const inputHL = nav && nav.type === 'later-input';
   inputEl.style.display = laterVisible ? '' : 'none';
@@ -1302,7 +1302,7 @@ function render() {
           }
           return `<span class="t-time">${fmt(displayMs)}</span>`;
         })()}
-        ${isRecent ? '' : `<span class="t-expand">${task.sessions.length ? (isExp ? '▼' : '▶') : ''}</span>`}
+        ${isRecent ? '' : `<span class="t-expand${task.sessions.length && isExp ? ' expanded' : ''}"${task.sessions.length ? '' : ' style="visibility:hidden"'}></span>`}
         <button class="t-del" data-id="${task.id}" tabindex="-1">✕</button>
       </div>
       ${sessionHTML}
@@ -1325,12 +1325,12 @@ function render() {
         <span class="t-time-sep">·</span>
         <span class="t-time-label">today</span> <span id="total-time">${fmt(allTodayMs())}</span>
       </span>
-      <span class="total-expand">▼</span>`;
+      <span class="total-expand expanded"></span>`;
   } else {
     totalRow.innerHTML = `
       <span class="total-label">today</span>
       <span class="total-time" id="total-time">${fmt(allTodayMs())}</span>
-      <span class="total-expand">${listShown ? '▼' : '▶'}</span>`;
+      <span class="total-expand${listShown ? ' expanded' : ''}"></span>`;
   }
 
   renderHistory();

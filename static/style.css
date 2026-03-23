@@ -556,8 +556,14 @@ html[data-theme="system"] #auth-screen {
   margin: 0 2px;
 }
 
-.t-expand {
-  font-size: 10px;
+/* ── Shared disclosure caret (macOS-style) ── */
+.t-expand,
+.day-chevron,
+.dt-chevron,
+.week-chevron,
+.total-expand,
+.later-chevron {
+  font-size: 0;
   color: var(--dimmer);
   width: 28px;
   height: 28px;
@@ -568,6 +574,32 @@ html[data-theme="system"] #auth-screen {
   border-radius: 4px;
   cursor: pointer;
   transition: color 0.1s, background 0.1s;
+}
+.t-expand::before,
+.day-chevron::before,
+.dt-chevron::before,
+.week-chevron::before,
+.total-expand::before,
+.later-chevron::before {
+  content: '';
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+  margin-left: -1px;
+}
+.t-expand.expanded::before,
+.day-chevron.expanded::before,
+.dt-chevron.expanded::before,
+.week-chevron.expanded::before,
+.total-expand.expanded::before,
+.later-chevron.expanded::before {
+  transform: rotate(45deg);
+  margin-left: 0;
+  margin-top: -2px;
 }
 
 .task-row:hover .t-expand { color: var(--dim); }
@@ -743,6 +775,12 @@ html[data-theme="system"] #auth-screen {
   margin-right: 4px;
   outline: none;
 }
+html[data-theme="dark"] .sl-time-input,
+html[data-theme="dark"] .sl-date-input { color-scheme: dark; }
+@media (prefers-color-scheme: dark) {
+  html[data-theme="system"] .sl-time-input,
+  html[data-theme="system"] .sl-date-input { color-scheme: dark; }
+}
 .sl-dash { color: var(--dim); }
 
 /* ── Total ── */
@@ -780,20 +818,6 @@ html[data-theme="system"] #auth-screen {
   margin-top: 40px;
 }
 
-.total-expand {
-  font-size: 10px;
-  color: var(--dimmer);
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: color 0.1s, background 0.1s;
-}
-
 .total-row:hover .total-expand { color: var(--dim); }
 .total-expand:hover { background: var(--sel); color: var(--text) !important; }
 
@@ -815,20 +839,6 @@ html[data-theme="system"] #auth-screen {
   border-bottom: 1px solid var(--border);
 }
 
-.week-chevron {
-  font-size: 10px;
-  color: var(--dimmer);
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: color 0.1s, background 0.1s;
-}
-
 .week-total-row:hover .week-chevron { color: var(--dim); }
 .week-chevron:hover { background: var(--sel); color: var(--text) !important; }
 
@@ -842,20 +852,6 @@ html[data-theme="system"] #auth-screen {
   border-top: 1px solid var(--border);
   cursor: pointer;
   user-select: none;
-}
-
-.day-chevron {
-  font-size: 10px;
-  color: var(--dimmer);
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: color 0.1s, background 0.1s;
 }
 
 .day-row:hover .day-chevron { color: var(--dim); }
@@ -928,19 +924,6 @@ html[data-theme="system"] #auth-screen {
   font-variant-numeric: tabular-nums;
 }
 
-.dt-chevron {
-  font-size: 10px;
-  color: var(--dimmer);
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: color 0.1s, background 0.1s;
-}
 .day-task-row:hover .dt-chevron { color: var(--dim); }
 .dt-chevron:hover { background: var(--sel); color: var(--text) !important; }
 
@@ -986,20 +969,6 @@ html[data-theme="system"] #auth-screen {
   color: var(--dimmer);
   text-transform: uppercase;
   letter-spacing: 0.15em;
-}
-
-.later-chevron {
-  font-size: 10px;
-  color: var(--dimmer);
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: color 0.1s, background 0.1s;
 }
 
 #later-header:hover .later-chevron { color: var(--dim); }

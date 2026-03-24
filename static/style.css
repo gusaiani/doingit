@@ -84,7 +84,23 @@ html[data-theme="system"] #auth-screen {
 .auth-inner {
   max-width: 400px;
   width: 100%;
+  position: relative;
 }
+
+.auth-close-btn {
+  position: absolute;
+  top: -.5rem;
+  right: 0.75rem;
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.5;
+  line-height: 1;
+  padding: 0;
+}
+.auth-close-btn:hover { opacity: 1; }
 
 #guest-banner {
   display: none;

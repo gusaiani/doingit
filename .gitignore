@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 .env
 local/
+node_modules/
+test_results/
+test-results/

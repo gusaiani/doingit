@@ -341,6 +341,49 @@ def reset_password(req: ResetPasswordRequest, db=Depends(get_db)):
     return {"ok": True}
 
 
+def merge_projects_from_blob(tasks: list, blob_json: str | None) -> tuple[list, list]:
+    """Attach `projects` and per-task `projectId` from `user_data.tasks_json`.
+
+    Tasks/sessions are authoritative in relational tables; the JSON blob carries
+    project metadata written by POST /data (same payload the client sends).
+    """
+    if not blob_json:
+        return tasks, []
+    try:
+        blob = json.loads(blob_json)
+    except (json.JSONDecodeError, TypeError):
+        return tasks, []
+    raw_projects = blob.get("projects")
+    projects: list = raw_projects if isinstance(raw_projects, list) else []
+    valid_ids = {
+        p["id"]
+        for p in projects
+        if isinstance(p, dict) and p.get("id")
+    }
+    blob_tasks = blob.get("tasks")
+    if not isinstance(blob_tasks, list):
+        blob_tasks = []
+    id_to_project: dict[str, str | None] = {}
+    for t in blob_tasks:
+        if not isinstance(t, dict) or not t.get("id"):
+            continue
+        pid = t.get("projectId")
+        if pid is None:
+            id_to_project[t["id"]] = None
+        elif pid in valid_ids:
+            id_to_project[t["id"]] = pid
+    for task in tasks:
+        tid = task.get("id")
+        if tid not in id_to_project:
+            continue
+        val = id_to_project[tid]
+        if val is None:
+            task["projectId"] = None
+        else:
+            task["projectId"] = val
+    return tasks, projects
+
+
 @app.get("/data")
 def get_data(
     user_id: Annotated[int, Depends(current_user_id)],
@@ -378,7 +421,12 @@ def get_data(
     theme_row = db.fetchone()
     theme = theme_row["theme"] if theme_row else None
 
-    return JSONResponse({"tasks": tasks, "later": later, "theme": theme})
+    db.execute("SELECT tasks_json FROM user_data WHERE user_id = %s", (user_id,))
+    blob_row = db.fetchone()
+    blob_json = blob_row["tasks_json"] if blob_row else None
+    tasks, projects = merge_projects_from_blob(tasks, blob_json)
+
+    return JSONResponse({"tasks": tasks, "later": later, "theme": theme, "projects": projects})
 
 
 @app.post("/data", status_code=204)

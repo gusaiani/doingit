@@ -16,7 +16,7 @@ def test_post_without_auth_returns_403(client):
 def test_new_user_has_empty_task_list(client, alice):
     r = client.get("/data", headers=auth_headers(alice["token"]))
     assert r.status_code == 200
-    assert r.json() == {"tasks": [], "later": [], "theme": None}
+    assert r.json() == {"tasks": [], "later": [], "theme": None, "projects": []}
 
 
 def test_post_and_get_roundtrip(client, alice):
@@ -84,7 +84,7 @@ def test_data_is_isolated_between_users(client, alice, bob):
 
     # Bob sees his own empty list — not Alice's.
     r = client.get("/data", headers=auth_headers(bob["token"]))
-    assert r.json() == {"tasks": [], "later": [], "theme": None}
+    assert r.json() == {"tasks": [], "later": [], "theme": None, "projects": []}
 
     # Bob saves his own data — Alice's must be untouched.
     client.post("/data", content=json.dumps(bob_payload), headers=auth_headers(bob["token"]))
@@ -121,3 +121,38 @@ def test_session_end_update(client, alice):
     r = client.get("/data", headers=auth_headers(alice["token"]))
     session = r.json()["tasks"][0]["sessions"][0]
     assert session["end"] == now + 3600_000
+
+
+def test_projects_and_project_id_roundtrip(client, alice):
+    """GET /data merges projects + projectId from user_data.tasks_json (same as POST body)."""
+    projects = [
+        {
+            "id": "p1",
+            "name": "Alpha",
+            "normalizedName": "alpha",
+            "createdAt": 1_700_000_000_000,
+        },
+    ]
+    payload = {
+        "tasks": [{"id": "t1", "name": "Write tests", "sessions": [], "projectId": "p1"}],
+        "later": [],
+        "projects": projects,
+    }
+    client.post("/data", content=json.dumps(payload), headers=auth_headers(alice["token"]))
+    r = client.get("/data", headers=auth_headers(alice["token"]))
+    body = r.json()
+    assert body["projects"] == projects
+    assert body["tasks"][0]["projectId"] == "p1"
+
+
+def test_project_id_not_merged_if_not_in_projects_list(client, alice):
+    """Orphan projectId in blob is not applied (client would strip it anyway)."""
+    payload = {
+        "tasks": [{"id": "t1", "name": "Task", "sessions": [], "projectId": "ghost-id"}],
+        "later": [],
+        "projects": [],
+    }
+    client.post("/data", content=json.dumps(payload), headers=auth_headers(alice["token"]))
+    r = client.get("/data", headers=auth_headers(alice["token"]))
+    task = r.json()["tasks"][0]
+    assert "projectId" not in task

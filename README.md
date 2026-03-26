@@ -198,6 +198,8 @@ It generates sessions across the last 10 weekdays for five built-in tasks (`deep
 
 All task data is stored per-user in a Postgres database. Locally this is the `tt` database on your Postgres.app instance. In production it's the Fly.io Postgres cluster attached to the app.
 
+Tasks, sessions, and the “later” list are normalized into SQL tables. **`GET /data` returns them from those tables.** Projects and each task’s `projectId` are not separate tables; they are stored inside the `user_data.tasks_json` blob (the same JSON the client sends on `POST /data`). On read, the server merges that blob so **`projects` and `projectId` round-trip** with the rest of the payload—reloads and new devices see the same project tags as long as the client has synced at least once after creating projects.
+
 ## Files
 
 ```

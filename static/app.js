@@ -946,15 +946,21 @@ function filtered() {
   const q = queryLC();
   if (!q) {
     const todayTasks = data.tasks.filter(t => taskTodayMs(t) > 0 || t.sessions.some(s => !s.end));
-    if (todayTasks.length >= 5) return todayTasks;
+    if (todayTasks.length >= 5) return sortRunningFirst(todayTasks);
     const todayIds = new Set(todayTasks.map(t => t.id));
     const recent = data.tasks
       .filter(t => !todayIds.has(t.id) && t.sessions.length > 0)
       .sort((a, b) => Math.max(...b.sessions.map(s => s.start)) - Math.max(...a.sessions.map(s => s.start)))
       .slice(0, 5 - todayTasks.length);
-    return [...todayTasks, ...recent];
+    return sortRunningFirst([...todayTasks, ...recent]);
   }
   return data.tasks.filter(t => t.name.toLowerCase().includes(q));
+}
+
+function sortRunningFirst(tasks) {
+  const running = tasks.filter(t => t.sessions.some(s => !s.end));
+  const rest = tasks.filter(t => !t.sessions.some(s => !s.end));
+  return [...running, ...rest];
 }
 
 // ── History helpers ────────────────────────────────────────────────────────────

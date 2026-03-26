@@ -513,6 +513,7 @@ html[data-theme="system"] #auth-screen {
   display: none;
 }
 
+.task-row.running { background: color-mix(in srgb, var(--green) 8%, transparent); }
 .task-row.running .t-dot { display: block; }
 
 @keyframes blink {

@@ -617,6 +617,8 @@ document.getElementById('header-signin').addEventListener('click', () => {
   authMode = 'login'; showLoginView(); showAuth();
 });
 
+document.getElementById('auth-close').addEventListener('click', hideAuth);
+
 // ── Pomodoro ──────────────────────────────────────────────────────────────────
 let pomodoroActive = localStorage.getItem('tt_pomodoro_active') === 'true';
 let pomodoroTimer  = null;

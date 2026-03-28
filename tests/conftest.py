@@ -74,6 +74,16 @@ def init_test_db():
                 PRIMARY KEY (id, user_id)
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS done_items (
+                id       TEXT    NOT NULL,
+                user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                text     TEXT    NOT NULL,
+                done_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (id, user_id)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS done_items_user_done ON done_items(user_id, done_at DESC)")
     conn.close()
 
 

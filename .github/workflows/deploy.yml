@@ -1,4 +1,4 @@
-name: Deploy to Fly.io
+name: Deploy to poe.ma
 
 on:
   push:
@@ -11,8 +11,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: poe.ma
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cp /opt/doingit/.env /tmp/doingit-env-backup
+            rsync --delete --exclude='.env' --exclude='venv' -a /dev/stdin /opt/doingit/ < /dev/null || true
+            cd /opt/doingit
+            cp /tmp/doingit-env-backup .env
 
-      - run: flyctl deploy --remote-only --yes
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      - name: Copy files via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: poe.ma
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "app.py,index.html,requirements.txt,static/"
+          target: /opt/doingit/
+
+      - name: Install deps and restart
+        uses: appleboy/ssh-action@v1
+        with:
+          host: poe.ma
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd /opt/doingit
+            chown -R www-data:www-data /opt/doingit
+            /opt/doingit/venv/bin/pip install -q -r requirements.txt
+            systemctl restart doingit

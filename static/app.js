@@ -44,6 +44,7 @@ applyTheme();
 
 // ── Persistence ───────────────────────────────────────────────────────────────
 const GUEST_KEY        = 'tt_guest_tasks';
+const GUEST_DONE_KEY   = 'tt_guest_done';
 const GUEST_TRIAL_KEY  = 'tt_guest_trial_start';
 const FREE_LIMIT       = 5;
 let data = { tasks: [] };
@@ -1137,6 +1138,26 @@ function deleteLaterItem(id) {
   render();
 }
 
+function markLaterDone(id) {
+  const item = data.later.find(i => i.id === id);
+  if (!item) return;
+  data.later = data.later.filter(i => i.id !== id);
+  const token = localStorage.getItem('tt_token');
+  if (token) {
+    fetch('/done', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ id: item.id, text: item.text }),
+    }).catch(() => {});
+  } else {
+    const done = JSON.parse(localStorage.getItem(GUEST_DONE_KEY) || '[]');
+    done.unshift({ id: item.id, text: item.text, done_at: new Date().toISOString() });
+    localStorage.setItem(GUEST_DONE_KEY, JSON.stringify(done));
+  }
+  persist();
+  render();
+}
+
 async function promoteToTask(id) {
   const item = data.later.find(i => i.id === id);
   if (!item) return;
@@ -1169,10 +1190,14 @@ function renderLater() {
       <li class="later-item${itemHL}" data-id="${item.id}">
         <span class="later-text">${esc(item.text)}</span>
         <button class="later-promote" data-id="${item.id}" title="start task">▶</button>
+        <button class="later-done" data-id="${item.id}" title="mark done">✓</button>
         <button class="later-del" data-id="${item.id}">✕</button>
       </li>`;
     }).join('');
   }
+
+  const doneLink = document.getElementById('later-done-link');
+  if (doneLink) doneLink.style.display = laterVisible ? '' : 'none';
 }
 
 // ── Hint row ──────────────────────────────────────────────────────────────────
@@ -1544,6 +1569,10 @@ document.getElementById('later-list').addEventListener('click', e => {
     promoteToTask(e.target.dataset.id);
     return;
   }
+  if (e.target.classList.contains('later-done')) {
+    markLaterDone(e.target.dataset.id);
+    return;
+  }
   if (e.target.classList.contains('later-del')) {
     deleteLaterItem(e.target.dataset.id);
   }
@@ -1742,7 +1771,126 @@ document.getElementById('about-backdrop').addEventListener('click', hideAbout);
 // ── Theme toggle ─────────────────────────────────────────────────────────────
 document.getElementById('theme-toggle').addEventListener('click', cycleTheme);
 
+// ── Done page ────────────────────────────────────────────────────────────────
+function isDonePage() { return location.pathname === '/done-list'; }
+
+async function initDonePage() {
+  document.getElementById('app').innerHTML = `
+    <div class="theme-bar">
+      <button class="header-theme" id="theme-toggle-done" title="Toggle theme"></button>
+    </div>
+    <div class="done-page">
+      <div class="done-header">
+        <a href="/" class="done-back">← Back</a>
+        <h1 class="done-title">Done</h1>
+      </div>
+      <div class="done-stats" id="done-stats"></div>
+      <ul class="done-list" id="done-list"></ul>
+      <div class="done-loading" id="done-loading" style="display:none">Loading…</div>
+      <div class="done-empty" id="done-empty" style="display:none">No items marked as done yet.</div>
+    </div>`;
+
+  document.getElementById('theme-toggle-done').innerHTML = document.getElementById('theme-toggle-done')?.innerHTML || '';
+  const btn = document.getElementById('theme-toggle-done');
+  const saved = localStorage.getItem(THEME_KEY) || 'light';
+  btn.innerHTML = THEME_ICONS[saved];
+  btn.addEventListener('click', () => { cycleTheme(); btn.innerHTML = THEME_ICONS[localStorage.getItem(THEME_KEY) || 'light']; });
+
+  const token = localStorage.getItem('tt_token');
+  const isGuest = !token;
+  let allItems = [];
+  let total = 0;
+  let offset = 0;
+  const PAGE = 50;
+
+  async function loadStats() {
+    const statsEl = document.getElementById('done-stats');
+    if (isGuest) {
+      const done = JSON.parse(localStorage.getItem(GUEST_DONE_KEY) || '[]');
+      const now = new Date();
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1));
+      weekStart.setHours(0, 0, 0, 0);
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const tenWeeksAgo = new Date(now.getTime() - 10 * 7 * 24 * 60 * 60 * 1000);
+
+      const thisWeek = done.filter(d => new Date(d.done_at) >= weekStart).length;
+      const thisMonth = done.filter(d => new Date(d.done_at) >= monthStart).length;
+      const last10w = done.filter(d => new Date(d.done_at) >= tenWeeksAgo).length;
+      const avg = Math.round(last10w / 10 * 10) / 10;
+
+      statsEl.innerHTML = `
+        <div class="done-stat"><span class="done-stat-value">${avg}</span><span class="done-stat-label">avg / week<span class="done-stat-sub">(last 10 weeks)</span></span></div>
+        <div class="done-stat"><span class="done-stat-value">${thisWeek}</span><span class="done-stat-label">this week</span></div>
+        <div class="done-stat"><span class="done-stat-value">${thisMonth}</span><span class="done-stat-label">this month</span></div>`;
+      return;
+    }
+    try {
+      const r = await fetch('/done/stats', { headers: { 'Authorization': `Bearer ${token}` } });
+      if (!r.ok) return;
+      const s = await r.json();
+      statsEl.innerHTML = `
+        <div class="done-stat"><span class="done-stat-value">${s.avg_per_week}</span><span class="done-stat-label">avg / week<span class="done-stat-sub">(last 10 weeks)</span></span></div>
+        <div class="done-stat"><span class="done-stat-value">${s.this_week}</span><span class="done-stat-label">this week</span></div>
+        <div class="done-stat"><span class="done-stat-value">${s.this_month}</span><span class="done-stat-label">this month</span></div>`;
+    } catch {}
+  }
+
+  function renderItems() {
+    const ul = document.getElementById('done-list');
+    ul.innerHTML = allItems.map(item => {
+      const d = new Date(item.done_at);
+      const dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      return `<li class="done-item"><span class="done-item-check">✓</span><span class="done-item-text">${esc(item.text)}</span><span class="done-item-date">${dateStr}</span></li>`;
+    }).join('');
+  }
+
+  async function loadMore() {
+    const loadingEl = document.getElementById('done-loading');
+    const emptyEl = document.getElementById('done-empty');
+    loadingEl.style.display = 'block';
+
+    if (isGuest) {
+      const done = JSON.parse(localStorage.getItem(GUEST_DONE_KEY) || '[]');
+      total = done.length;
+      allItems = done.slice(0, offset + PAGE);
+      offset = allItems.length;
+    } else {
+      try {
+        const r = await fetch(`/done?offset=${offset}&limit=${PAGE}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!r.ok) { loadingEl.style.display = 'none'; return; }
+        const body = await r.json();
+        total = body.total;
+        allItems = allItems.concat(body.items);
+        offset += body.items.length;
+      } catch { loadingEl.style.display = 'none'; return; }
+    }
+
+    loadingEl.style.display = 'none';
+    if (allItems.length === 0) { emptyEl.style.display = 'block'; return; }
+    renderItems();
+  }
+
+  // Infinite scroll
+  window.addEventListener('scroll', () => {
+    if (!isDonePage()) return;
+    if (offset >= total) return;
+    if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 200) {
+      loadMore();
+    }
+  });
+
+  await Promise.all([loadStats(), loadMore()]);
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 window.onGoogleLibraryLoad = initGoogleButton; // fires when GIS script finishes loading
 loadGoogleAuth();                               // fetches client_id from backend
-load();
+if (isDonePage()) {
+  applyTheme();
+  initDonePage();
+} else {
+  load();
+}

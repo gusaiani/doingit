@@ -194,6 +194,26 @@ python3 seed.py --email you@example.com --db postgresql://localhost/tt
 
 It generates sessions across the last 10 weekdays for five built-in tasks (`deep work`, `email & slack`, `code review`, `meetings`, `planning`) and also adds historical sessions to any existing tasks already in the account (`React Query`, `Interview Prep`). Safe to re-run — it never removes existing tasks or sessions, only adds new ones.
 
+## Done items
+
+Later items can be marked as done. Each later item shows a green ✓ button (to the left of the red ✕) that moves the item to the "Done" list.
+
+**How it works**
+
+1. Clicking the ✓ on a later item removes it from the Later list and records it as done with the current timestamp.
+2. A "See all Done" link appears below the Later list, linking to `/done-list`.
+3. The Done page shows all completed items sorted newest-first with infinite scroll (50 items per page).
+4. Stats at the top of the page show: average done per week over the last 10 weeks, done this week, and done this month.
+5. Guest users' done items are stored in `localStorage` (`tt_guest_done`). Signed-in users' done items are stored in the `done_items` table.
+
+**API endpoints**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/done` | Mark an item as done (`{id, text}`) |
+| `GET` | `/done?offset=0&limit=50` | Paginated list of done items |
+| `GET` | `/done/stats` | Stats: `this_week`, `this_month`, `avg_per_week` |
+
 ## Data
 
 All task data is stored per-user in a Postgres database. Locally this is the `tt` database on your Postgres.app instance. In production it's the Fly.io Postgres cluster attached to the app.

@@ -139,6 +139,16 @@ def init_db():
                         )
                     """)
                     cur.execute("CREATE INDEX IF NOT EXISTS sessions_user_start ON sessions(user_id, start_ts)")
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS done_items (
+                            id       TEXT    NOT NULL,
+                            user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                            text     TEXT    NOT NULL,
+                            done_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            PRIMARY KEY (id, user_id)
+                        )
+                    """)
+                    cur.execute("CREATE INDEX IF NOT EXISTS done_items_user_done ON done_items(user_id, done_at DESC)")
             return
         except psycopg2.OperationalError:
             if attempt == 9:
@@ -528,6 +538,81 @@ def put_preferences(
     return Response(status_code=204)
 
 
+class MarkDoneRequest(BaseModel):
+    id: str
+    text: str
+
+
+@app.post("/done", status_code=201)
+def mark_done(
+    req: MarkDoneRequest,
+    user_id: Annotated[int, Depends(current_user_id)],
+    db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
+):
+    db.execute(
+        "INSERT INTO done_items (id, user_id, text) VALUES (%s, %s, %s) "
+        "ON CONFLICT (id, user_id) DO NOTHING",
+        (req.id, user_id, req.text),
+    )
+    return {"ok": True}
+
+
+@app.get("/done")
+def get_done(
+    user_id: Annotated[int, Depends(current_user_id)],
+    db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
+    offset: int = 0,
+    limit: int = 50,
+):
+    limit = min(limit, 100)
+    db.execute(
+        "SELECT id, text, done_at FROM done_items "
+        "WHERE user_id = %s ORDER BY done_at DESC LIMIT %s OFFSET %s",
+        (user_id, limit, offset),
+    )
+    items = [
+        {"id": r["id"], "text": r["text"], "done_at": r["done_at"].isoformat()}
+        for r in db.fetchall()
+    ]
+    db.execute("SELECT COUNT(*) AS cnt FROM done_items WHERE user_id = %s", (user_id,))
+    total = db.fetchone()["cnt"]
+    return {"items": items, "total": total}
+
+
+@app.get("/done/stats")
+def done_stats(
+    user_id: Annotated[int, Depends(current_user_id)],
+    db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
+):
+    # Done this week (Monday-based)
+    db.execute("""
+        SELECT COUNT(*) AS cnt FROM done_items
+        WHERE user_id = %s AND done_at >= date_trunc('week', NOW())
+    """, (user_id,))
+    this_week = db.fetchone()["cnt"]
+
+    # Done this month
+    db.execute("""
+        SELECT COUNT(*) AS cnt FROM done_items
+        WHERE user_id = %s AND done_at >= date_trunc('month', NOW())
+    """, (user_id,))
+    this_month = db.fetchone()["cnt"]
+
+    # Average per week over last 10 weeks
+    db.execute("""
+        SELECT COUNT(*) AS cnt FROM done_items
+        WHERE user_id = %s AND done_at >= NOW() - INTERVAL '10 weeks'
+    """, (user_id,))
+    total_10w = db.fetchone()["cnt"]
+    avg_per_week = round(total_10w / 10, 1)
+
+    return {
+        "this_week": this_week,
+        "this_month": this_month,
+        "avg_per_week": avg_per_week,
+    }
+
+
 def count_today_sessions(user_id: int, db) -> int:
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     db.execute("""
@@ -690,6 +775,11 @@ def billing_success():
 @app.get("/favicon-local.png")
 def favicon_local():
     return FileResponse("favicon-local.png", media_type="image/png")
+
+
+@app.get("/done-list")
+def done_page():
+    return FileResponse("index.html")
 
 
 @app.get("/")

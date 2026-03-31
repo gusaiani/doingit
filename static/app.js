@@ -47,7 +47,126 @@ const GUEST_KEY        = 'tt_guest_tasks';
 const GUEST_DONE_KEY   = 'tt_guest_done';
 const GUEST_TRIAL_KEY  = 'tt_guest_trial_start';
 const FREE_LIMIT       = 5;
-let data = { tasks: [] };
+const MAX_PROJECT_SUGGESTIONS = 6;
+let data = { tasks: [], later: [], projects: [] };
+
+function normalizeProjectName(name = '') {
+  return name.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function ensureDataShape() {
+  if (!data || typeof data !== 'object') data = {};
+  if (!Array.isArray(data.tasks)) data.tasks = [];
+  if (!Array.isArray(data.later)) data.later = [];
+  if (!Array.isArray(data.projects)) data.projects = [];
+
+  const byNormalized = new Map();
+  data.projects.forEach(project => {
+    if (!project || typeof project !== 'object') return;
+    const normalizedName = normalizeProjectName(project.normalizedName || project.name || '');
+    if (!normalizedName || byNormalized.has(normalizedName)) return;
+    byNormalized.set(normalizedName, {
+      id: project.id || crypto.randomUUID(),
+      name: normalizeProjectName(project.name || normalizedName),
+      normalizedName,
+      createdAt: project.createdAt || Date.now(),
+    });
+  });
+  data.projects = Array.from(byNormalized.values());
+
+  const validProjectIds = new Set(data.projects.map(project => project.id));
+  data.tasks.forEach(task => {
+    if (!Array.isArray(task.sessions)) task.sessions = [];
+    if (!task.projectId || !validProjectIds.has(task.projectId)) task.projectId = null;
+  });
+}
+
+function getProjectById(projectId) {
+  if (!projectId) return null;
+  return data.projects.find(project => project.id === projectId) || null;
+}
+
+function projectNameForTask(task) {
+  return getProjectById(task.projectId)?.name || null;
+}
+
+function taskLabel(task) {
+  const project = projectNameForTask(task);
+  return project ? `${task.name} #${project}` : task.name;
+}
+
+function upsertProjectByName(rawName) {
+  const normalizedName = normalizeProjectName(rawName);
+  if (!normalizedName) return null;
+  const existing = data.projects.find(project => project.normalizedName === normalizedName);
+  if (existing) return existing.id;
+  const project = {
+    id: crypto.randomUUID(),
+    name: normalizedName,
+    normalizedName,
+    createdAt: Date.now(),
+  };
+  data.projects.push(project);
+  return project.id;
+}
+
+function linkedTasksCount(projectId) {
+  return data.tasks.filter(task => task.projectId === projectId).length;
+}
+
+function deleteProjectById(projectId) {
+  const project = getProjectById(projectId);
+  if (!project) return;
+  const affected = linkedTasksCount(projectId);
+  const suffix = affected
+    ? ` ${affected} task${affected === 1 ? '' : 's'} will keep their history without project.`
+    : '';
+  if (!confirm(`Delete project "#${project.name}"?${suffix}`)) return;
+  data.projects = data.projects.filter(item => item.id !== projectId);
+  data.tasks.forEach(task => {
+    if (task.projectId === projectId) task.projectId = null;
+  });
+  persist();
+}
+
+function parseTaskInput(rawInput) {
+  const input = (rawInput || '').trim();
+  if (!input) return { taskName: '', projectName: null, hasProject: false };
+  const match = input.match(/^(.*?)\s+#(.*)$/);
+  if (!match) return { taskName: input, projectName: null, hasProject: false };
+  const taskName = match[1].trim();
+  const projectName = normalizeProjectName(match[2] || '');
+  if (!projectName) return { taskName, projectName: null, hasProject: false };
+  return {
+    taskName,
+    projectName,
+    hasProject: true,
+  };
+}
+
+function parseProjectAutocompleteContext(rawInput) {
+  const input = rawInput || '';
+  const match = input.match(/^(.*?)\s+#(.*)$/);
+  if (!match) return null;
+  return {
+    taskPart: match[1].trim(),
+    typedProject: normalizeProjectName(match[2] || ''),
+  };
+}
+
+function createOrFindTaskFromQuery(rawInput) {
+  const parsed = parseTaskInput(rawInput);
+  if (!parsed.taskName) return null;
+  const projectId = parsed.hasProject ? upsertProjectByName(parsed.projectName) : null;
+  const existing = data.tasks.find(task =>
+    task.name.toLowerCase() === parsed.taskName.toLowerCase() &&
+    (task.projectId || null) === (projectId || null)
+  );
+  if (existing) return existing;
+  const task = { id: crypto.randomUUID(), name: parsed.taskName, sessions: [], projectId };
+  data.tasks.unshift(task);
+  return task;
+}
 
 // ── Billing state ─────────────────────────────────────────────────────────────
 let subscriptionStatus = 'free';
@@ -79,15 +198,14 @@ async function load() {
       return;
     }
     data = await r.json();
-    data.later = data.later || [];
+    ensureDataShape();
     if (data.theme) {
       localStorage.setItem(THEME_KEY, data.theme);
     } else if (data.theme === null && localStorage.getItem(THEME_KEY)) {
-      // Server has no preference — keep local; push it up
       persistTheme();
     }
     applyTheme();
-  } catch { data = { tasks: [] }; }
+  } catch { data = { tasks: [], later: [], projects: [] }; }
   await fetchBillingStatus();
   showUserMode();
   hideAuth();
@@ -99,6 +217,7 @@ const bc = new BroadcastChannel('tt');
 
 bc.onmessage = e => {
   data = e.data;
+  ensureDataShape();
   render();
   ensureTick();
 };
@@ -168,13 +287,15 @@ async function handleGoogleCredential(response) {
       });
       localStorage.removeItem(GUEST_KEY);
       data = JSON.parse(guestRaw);
+      ensureDataShape();
       showUserMode();
       hideAuth();
       render();
       ensureTick();
       return;
     }
-    data = { tasks: [] };
+    data = { tasks: [], later: [], projects: [] };
+    ensureDataShape();
     await load();
   } catch {
     errorEl.textContent = 'network error';
@@ -212,8 +333,8 @@ function showResetView() {
 
 function loadGuestData() {
   const raw = localStorage.getItem(GUEST_KEY);
-  data = raw ? JSON.parse(raw) : { tasks: [] };
-  data.later = data.later || [];
+  data = raw ? JSON.parse(raw) : { tasks: [], later: [], projects: [] };
+  ensureDataShape();
 }
 
 function showGuestMode() {
@@ -387,6 +508,7 @@ async function submitAuth() {
         console.log('[sync] POST /data status=', syncRes.status);
         localStorage.removeItem(GUEST_KEY);
         data = JSON.parse(guestRaw);
+        ensureDataShape();
         showUserMode();
         hideAuth();
         render();
@@ -398,7 +520,8 @@ async function submitAuth() {
     } else {
       console.log('[sync] authMode is not signup — skipping sync');
     }
-    data = { tasks: [] };
+    data = { tasks: [], later: [], projects: [] };
+    ensureDataShape();
     await load();
   } catch {
     errorEl.textContent = 'network error';
@@ -524,7 +647,7 @@ pomodoroBtn.addEventListener('click', () => {
     const running = runningTask();
     if (running) {
       const session = running.sessions.find(s => !s.end);
-      if (session) armPomodoroTimer(running.name, session.start);
+      if (session) armPomodoroTimer(taskLabel(running), session.start);
     }
   } else {
     clearPomodoroTimer();
@@ -675,7 +798,7 @@ async function startTask(task) {
   } else {
     const sessionStart = Date.now();
     task.sessions.push({ start: sessionStart, end: null });
-    armPomodoroTimer(task.name, sessionStart);
+    armPomodoroTimer(taskLabel(task), sessionStart);
   }
   persist();
   render();
@@ -688,7 +811,7 @@ async function startTask(task) {
 function deleteTask(id) {
   const task = data.tasks.find(t => t.id === id);
   if (!task) return;
-  if (!confirm(`Delete "${task.name}" and all its history?`)) return;
+  if (!confirm(`Delete "${taskLabel(task)}" and all its history?`)) return;
   data.tasks = data.tasks.filter(t => t.id !== id);
   expanded.delete(id);
   persist();
@@ -793,7 +916,7 @@ function updateTabTitle() {
   if (!cur) { document.title = 'Doing It'; return; }
   const session = cur.sessions.find(s => !s.end);
   if (!session) { document.title = 'Doing It'; return; }
-  document.title = `${fmtTabTimer(Date.now() - session.start)} · ${cur.name} · Doing It`;
+  document.title = `${fmtTabTimer(Date.now() - session.start)} · ${taskLabel(cur)} · Doing It`;
 }
 
 function liveUpdate() {
@@ -935,6 +1058,9 @@ const totalRow   = document.getElementById('total-row');
 const hdRunning  = document.getElementById('header-running');
 const hdDate     = document.getElementById('header-date');
 const historyEl  = document.getElementById('history');
+const projectAutocompleteEl = document.getElementById('project-autocomplete');
+let projectSuggestions = [];
+let projectSelIdx = -1;
 
 hdDate.textContent = new Date().toLocaleDateString('en-US', {
   weekday: 'short', month: 'short', day: 'numeric'
@@ -955,7 +1081,89 @@ function filtered() {
       .slice(0, 5 - todayTasks.length);
     return sortRunningFirst([...todayTasks, ...recent]);
   }
+  const projectContext = parseProjectAutocompleteContext(query());
+  if (projectContext) {
+    return data.tasks.filter(task => {
+      const taskNameMatch = task.name.toLowerCase().includes(projectContext.taskPart.toLowerCase());
+      const taskProject = (projectNameForTask(task) || '').toLowerCase();
+      const projectMatch = !projectContext.typedProject || taskProject.startsWith(projectContext.typedProject);
+      return taskNameMatch && projectMatch;
+    });
+  }
   return data.tasks.filter(t => t.name.toLowerCase().includes(q));
+}
+
+function projectSuggestionsForInput(rawInput) {
+  const context = parseProjectAutocompleteContext(rawInput);
+  if (!context || !context.taskPart) return [];
+
+  const typed = context.typedProject;
+  const existing = data.projects
+    .filter(project => !typed || project.normalizedName.startsWith(typed))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(0, MAX_PROJECT_SUGGESTIONS)
+    .map(project => ({ kind: 'existing', projectName: project.normalizedName, label: project.name, projectId: project.id }));
+
+  const hasExact = data.projects.some(project => project.normalizedName === typed);
+  if (typed && !hasExact) {
+    existing.unshift({
+      kind: 'create',
+      projectName: typed,
+      label: `create project "${typed}"`,
+    });
+  }
+  return existing;
+}
+
+function closeProjectAutocomplete() {
+  projectSuggestions = [];
+  projectSelIdx = -1;
+  projectAutocompleteEl.innerHTML = '';
+  projectAutocompleteEl.style.display = 'none';
+}
+
+function renderProjectAutocomplete() {
+  if (!projectSuggestions.length) {
+    closeProjectAutocomplete();
+    return;
+  }
+  projectAutocompleteEl.style.display = 'block';
+  projectAutocompleteEl.innerHTML = projectSuggestions.map((suggestion, idx) => `
+    <div class="project-row${idx === projectSelIdx ? ' selected' : ''}">
+      <button class="project-option${idx === projectSelIdx ? ' selected' : ''}" data-project-name="${esc(suggestion.projectName)}" type="button">
+        ${suggestion.kind === 'create' ? `<span class="po-create">${esc(suggestion.label)}</span>` : `<span class="po-hash">#</span>${esc(suggestion.label)}`}
+      </button>
+      ${suggestion.kind === 'existing' ? `
+        <button class="project-delete-btn" data-project-delete-id="${esc(suggestion.projectId)}" type="button" title="delete project">✕</button>
+      ` : ''}
+    </div>
+  `).join('');
+}
+
+function updateProjectAutocomplete(resetSelection = false) {
+  projectSuggestions = projectSuggestionsForInput(searchEl.value);
+  if (!projectSuggestions.length) {
+    closeProjectAutocomplete();
+    return;
+  }
+  if (resetSelection || projectSelIdx < 0) {
+    projectSelIdx = 0;
+  } else {
+    projectSelIdx = Math.min(projectSelIdx, projectSuggestions.length - 1);
+  }
+  renderProjectAutocomplete();
+}
+
+function applyProjectSuggestion(suggestion) {
+  const context = parseProjectAutocompleteContext(searchEl.value);
+  if (!context || !context.taskPart) return;
+  searchEl.value = `${context.taskPart} #${suggestion.projectName}`;
+  closeProjectAutocomplete();
+}
+
+function selectedProjectSuggestion() {
+  if (!projectSuggestions.length) return null;
+  return projectSuggestions[Math.max(projectSelIdx, 0)] || projectSuggestions[0] || null;
 }
 
 function sortRunningFirst(tasks) {
@@ -995,6 +1203,7 @@ function tasksForDay(dateStr) {
       return {
         id: t.id,
         name: t.name,
+        projectName: projectNameForTask(t),
         sessions,
         ms: sessions.reduce((a, s) => a + (s.end - s.start), 0)
       };
@@ -1006,7 +1215,7 @@ function tasksForDay(dateStr) {
 function deleteTaskDay(taskId, dateStr) {
   const task = data.tasks.find(t => t.id === taskId);
   if (!task) return;
-  if (!confirm(`Delete all "${task.name}" sessions for ${dateStr}?`)) return;
+  if (!confirm(`Delete all "${taskLabel(task)}" sessions for ${dateStr}?`)) return;
   task.sessions = task.sessions.filter(s =>
     localDateStr(new Date(s.start)) !== dateStr
   );
@@ -1053,7 +1262,7 @@ function renderHistory() {
           }</div>` : '';
           return `
           <div class="day-task-row${dtExp ? ' expanded' : ''}${dtHL}" data-task-id="${t.id}" data-date="${dateStr}">
-            <span class="dt-name">${esc(t.name)}</span>
+            <span class="dt-name">${esc(t.name)}${t.projectName ? ` <span class="dt-project">#${esc(t.projectName)}</span>` : ''}</span>
             <span class="dt-time">${fmt(t.ms)}</span>
             <span class="dt-chevron${dtExp ? ' expanded' : ''}"></span>
             <button class="dt-del" tabindex="-1">✕</button>
@@ -1161,8 +1370,8 @@ function markLaterDone(id) {
 async function promoteToTask(id) {
   const item = data.later.find(i => i.id === id);
   if (!item) return;
-  const task = { id: crypto.randomUUID(), name: item.text, sessions: [] };
-  data.tasks.push(task);
+  const task = createOrFindTaskFromQuery(item.text);
+  if (!task) return;
   data.later = data.later.filter(i => i.id !== id);
   await startTask(task); // stops any running task, persists, renders
 }
@@ -1206,6 +1415,7 @@ function updateHintRow() {
   const count       = filtered().length;
   const searchFocused = document.activeElement === searchEl;
   const hasRunning  = !!runningTask();
+  const selectedProject = selectedProjectSuggestion();
 
   const parts = [];
   if (count >= 1) {
@@ -1217,9 +1427,17 @@ function updateHintRow() {
   parts.push(`<kbd>n</kbd> new`);
   parts.push(`<kbd>N</kbd> later`);
   if (searchFocused) {
-    parts.push(`<kbd><span class="char-up">↵</span></kbd> start / stop`);
-    parts.push(`<kbd>↑↓</kbd> select`);
-    parts.push(`<kbd>tab</kbd> log`);
+    if (projectSuggestions.length) {
+      parts.push(`<kbd>↑↓</kbd> project`);
+      parts.push(`<kbd>←</kbd> close projects`);
+      if (selectedProject?.kind === 'existing') {
+        parts.push(`<kbd>→</kbd> delete project`);
+      }
+    } else {
+      parts.push(`<kbd><span class="char-up">↵</span></kbd> start / stop`);
+      parts.push(`<kbd>↑↓</kbd> select`);
+      parts.push(`<kbd>tab</kbd> log`);
+    }
   }
   if (navIdx >= 0) {
     parts.length = 0;
@@ -1231,7 +1449,7 @@ function updateHintRow() {
     parts.push(`<kbd>esc</kbd> exit`);
   } else {
     if (!searchFocused) parts.push(`<kbd>j/↓</kbd> navigate`);
-    if (hasRunning) parts.push(`<kbd>esc</kbd> clear`);
+    if (hasRunning && !projectSuggestions.length) parts.push(`<kbd>esc</kbd> clear`);
   }
 
   hintRowEl.innerHTML = parts.join(' &nbsp;·&nbsp; ');
@@ -1241,7 +1459,6 @@ function updateHintRow() {
 function render() {
   closeMoveDropdown();
   const q      = query();
-  const qLC    = q.toLowerCase();
   const tasks  = filtered();
   const running = runningTask();
 
@@ -1262,8 +1479,17 @@ function render() {
   listEl.innerHTML = '';
 
   // create hint (inline in search row)
-  const exactMatch = tasks.find(t => t.name.toLowerCase() === qLC);
-  document.getElementById('search-create-hint').classList.toggle('visible', !!(q && !exactMatch));
+  const parsedQuery = parseTaskInput(q);
+  const canCreateFromInput = parsedQuery.taskName && (!q.includes('#') || parsedQuery.hasProject);
+  const exactMatch = tasks.find(task =>
+    task.name.toLowerCase() === parsedQuery.taskName.toLowerCase() &&
+    (
+      !parsedQuery.hasProject
+        ? !task.projectId
+        : (projectNameForTask(task) || '') === parsedQuery.projectName
+    )
+  );
+  document.getElementById('search-create-hint').classList.toggle('visible', !!(canCreateFromInput && !exactMatch));
 
   updateHintRow();
 
@@ -1325,6 +1551,7 @@ function render() {
         <span class="t-shortcut">${i < 9 ? i + 1 : i === 9 ? 0 : ''}</span>
         <button class="t-play${isRunning ? ' pausing' : ''}" data-id="${task.id}" tabindex="-1">${isRunning ? '⏸' : '▶'}</button>
         <span class="t-name">${esc(task.name)}</span>
+        ${projectNameForTask(task) ? `<span class="t-project">#${esc(projectNameForTask(task))}</span>` : ''}
         <span class="t-dot"></span>
         ${isRecent ? '' : (() => {
           if (isRunning) {
@@ -1350,7 +1577,7 @@ function render() {
   if (!listShown && running) {
     const sessionStart = running.sessions.find(s => !s.end).start;
     totalRow.innerHTML = `
-      <span class="total-label">today &nbsp;·&nbsp; <span class="total-active-name">${esc(running.name)}</span></span>
+      <span class="total-label">today &nbsp;·&nbsp; <span class="total-active-name">${esc(taskLabel(running))}</span></span>
       <span class="total-time total-time-running">
         <span class="t-time-label">session</span> <span data-live-session="${sessionStart}">${fmt(Date.now() - sessionStart)}</span>
         <span class="t-time-sep">·</span>
@@ -1371,32 +1598,111 @@ function render() {
 }
 
 // ── Keyboard ──────────────────────────────────────────────────────────────────
+async function startFromQuery(rawQuery) {
+  const parsed = parseTaskInput(rawQuery);
+  if (!parsed.taskName) return false;
+
+  if (rawQuery.includes('#')) {
+    if (!parsed.hasProject) return false;
+    const taggedTask = createOrFindTaskFromQuery(rawQuery);
+    if (!taggedTask) return false;
+    await startTask(taggedTask);
+    return true;
+  }
+
+  const tasks = filtered();
+  let targetTask = null;
+  if (selIdx >= 0) {
+    targetTask = tasks[selIdx];
+  } else if (tasks.length > 0) {
+    const exact = tasks.find(task => task.name.toLowerCase() === parsed.taskName.toLowerCase() && !task.projectId);
+    targetTask = exact ?? tasks[0];
+  }
+
+  if (!targetTask && parsed.taskName) {
+    targetTask = createOrFindTaskFromQuery(parsed.taskName);
+  }
+  if (!targetTask) return false;
+
+  await startTask(targetTask);
+  return true;
+}
+
 document.getElementById('search-create-hint').addEventListener('mousedown', async e => {
   e.preventDefault(); // keep focus on input
   const q = query();
   if (!q) return;
-  const task = { id: crypto.randomUUID(), name: q, sessions: [] };
-  data.tasks.unshift(task);
+  if (q.includes('#') && !parseTaskInput(q).hasProject) return;
+  const task = createOrFindTaskFromQuery(q);
+  if (!task) return;
   await startTask(task);
   searchEl.value = '';
   selIdx = -1;
+  closeProjectAutocomplete();
   render();
 });
 
-searchEl.addEventListener('input', () => { selIdx = -1; render(); });
+searchEl.addEventListener('input', () => {
+  selIdx = -1;
+  updateProjectAutocomplete(true);
+  render();
+});
 
-searchEl.addEventListener('focus', () => { navIdx = -1; updateHintRow(); });
+searchEl.addEventListener('focus', () => {
+  navIdx = -1;
+  updateProjectAutocomplete(true);
+  updateHintRow();
+});
 searchEl.addEventListener('blur',  updateHintRow);
 
 searchEl.addEventListener('blur', () => {
   searchEl.value = '';
   selIdx = -1;
+  closeProjectAutocomplete();
   render();
 });
 
 searchEl.addEventListener('keydown', async e => {
-  const tasks = filtered();
   const q     = query();
+  const tasks = filtered();
+
+  if (projectSuggestions.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    e.preventDefault();
+    const step = e.key === 'ArrowDown' ? 1 : -1;
+    projectSelIdx = (projectSelIdx + step + projectSuggestions.length) % projectSuggestions.length;
+    renderProjectAutocomplete();
+    return;
+  }
+
+  if (projectSuggestions.length && (e.key === 'Enter' || e.key === 'Tab')) {
+    e.preventDefault();
+    const suggestion = selectedProjectSuggestion();
+    if (!suggestion) return;
+    applyProjectSuggestion(suggestion);
+    render();
+    return;
+  }
+
+  if (projectSuggestions.length && e.key === 'ArrowRight') {
+    e.preventDefault();
+    const suggestion = selectedProjectSuggestion();
+    if (!suggestion || suggestion.kind !== 'existing') return;
+    deleteProjectById(suggestion.projectId);
+    updateProjectAutocomplete(true);
+    render();
+    return;
+  }
+
+  if (projectSuggestions.length && e.key === 'ArrowLeft') {
+    e.preventDefault();
+    e.stopPropagation();
+    const context = parseProjectAutocompleteContext(searchEl.value);
+    if (context) searchEl.value = context.taskPart;
+    selIdx = -1;
+    closeProjectAutocomplete();
+    render();
+    return;
+  }
 
   if (e.key === 'ArrowDown') {
     e.preventDefault();
@@ -1426,27 +1732,31 @@ searchEl.addEventListener('keydown', async e => {
   } else if (e.key === 'Enter') {
     e.preventDefault();
     if (!q && selIdx < 0) return;
-
-    let task;
-    if (selIdx >= 0) {
-      task = tasks[selIdx];
-    } else if (tasks.length > 0) {
-      const exact = tasks.find(t => t.name.toLowerCase() === q.toLowerCase());
-      task = exact ?? tasks[0];
-    }
-
-    if (!task && q) {
-      task = { id: crypto.randomUUID(), name: q, sessions: [] };
-      data.tasks.unshift(task);
-    }
-
-    if (task) {
-      await startTask(task);
+    const started = await startFromQuery(q);
+    if (started) {
       searchEl.value = '';
       selIdx = -1;
+      closeProjectAutocomplete();
       render();
     }
   }
+});
+
+projectAutocompleteEl.addEventListener('mousedown', e => e.preventDefault());
+projectAutocompleteEl.addEventListener('click', e => {
+  const deleteBtn = e.target.closest('[data-project-delete-id]');
+  if (deleteBtn) {
+    deleteProjectById(deleteBtn.dataset.projectDeleteId);
+    updateProjectAutocomplete(true);
+    render();
+    return;
+  }
+
+  const option = e.target.closest('[data-project-name]');
+  if (!option) return;
+  applyProjectSuggestion({ projectName: option.dataset.projectName });
+  searchEl.focus();
+  render();
 });
 
 // ── Inline session editing ─────────────────────────────────────────────────────

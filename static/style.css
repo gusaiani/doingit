@@ -1099,6 +1099,18 @@ html[data-theme="dark"] .sl-date-input { color-scheme: dark; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.later-text a,
+.t-name a,
+.done-item-text a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.later-text a:hover,
+.t-name a:hover,
+.done-item-text a:hover {
+  opacity: 0.7;
+}
 
 .later-promote,
 .later-done,

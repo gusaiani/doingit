@@ -1772,6 +1772,21 @@ document.getElementById('about-backdrop').addEventListener('click', hideAbout);
 document.getElementById('theme-toggle').addEventListener('click', cycleTheme);
 
 // ── Done page ────────────────────────────────────────────────────────────────
+function buildSparkline(weekly) {
+  if (!weekly || weekly.length === 0) return '';
+  const max = Math.max(...weekly, 1);
+  const w = 120, h = 32, pad = 2;
+  const step = weekly.length > 1 ? (w - pad * 2) / (weekly.length - 1) : 0;
+  const points = weekly.map((v, i) => {
+    const x = pad + i * step;
+    const y = h - pad - ((v / max) * (h - pad * 2));
+    return `${x},${y}`;
+  });
+  return `<svg class="done-sparkline" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    <polyline fill="none" stroke="var(--dimmer)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" points="${points.join(' ')}"/>
+  </svg>`;
+}
+
 function isDonePage() { return location.pathname === '/done-list'; }
 
 async function initDonePage() {
@@ -1812,17 +1827,17 @@ async function initDonePage() {
       weekStart.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1));
       weekStart.setHours(0, 0, 0, 0);
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const tenWeeksAgo = new Date(now.getTime() - 10 * 7 * 24 * 60 * 60 * 1000);
+      const fourWeeksAgo = new Date(now.getTime() - 4 * 7 * 24 * 60 * 60 * 1000);
 
       const thisWeek = done.filter(d => new Date(d.done_at) >= weekStart).length;
       const thisMonth = done.filter(d => new Date(d.done_at) >= monthStart).length;
-      const last10w = done.filter(d => new Date(d.done_at) >= tenWeeksAgo).length;
-      const avg = Math.round(last10w / 10 * 10) / 10;
+      const last4w = done.filter(d => new Date(d.done_at) >= fourWeeksAgo).length;
+      const avg = Math.round(last4w / 4 * 10) / 10;
 
       statsEl.innerHTML = `
-        <div class="done-stat"><span class="done-stat-value">${avg}</span><span class="done-stat-label">avg / week<span class="done-stat-sub">(last 10 weeks)</span></span></div>
+        <div class="done-stat"><span class="done-stat-value">${thisMonth}</span><span class="done-stat-label">this month</span></div>
         <div class="done-stat"><span class="done-stat-value">${thisWeek}</span><span class="done-stat-label">this week</span></div>
-        <div class="done-stat"><span class="done-stat-value">${thisMonth}</span><span class="done-stat-label">this month</span></div>`;
+        <div class="done-stat"><span class="done-stat-value">${avg}</span><span class="done-stat-label">avg / week<span class="done-stat-sub">(last 4 weeks)</span></span></div>`;
       return;
     }
     try {
@@ -1830,9 +1845,10 @@ async function initDonePage() {
       if (!r.ok) return;
       const s = await r.json();
       statsEl.innerHTML = `
-        <div class="done-stat"><span class="done-stat-value">${s.avg_per_week}</span><span class="done-stat-label">avg / week<span class="done-stat-sub">(last 10 weeks)</span></span></div>
+        <div class="done-stat"><span class="done-stat-value">${s.this_month}</span><span class="done-stat-label">this month</span></div>
         <div class="done-stat"><span class="done-stat-value">${s.this_week}</span><span class="done-stat-label">this week</span></div>
-        <div class="done-stat"><span class="done-stat-value">${s.this_month}</span><span class="done-stat-label">this month</span></div>`;
+        <div class="done-stat"><span class="done-stat-value">${s.avg_per_week}</span><span class="done-stat-label">avg / week<span class="done-stat-sub">(last ${s.avg_weeks} week${s.avg_weeks === 1 ? '' : 's'})</span></span></div>
+        <div class="done-stat done-stat-spark">${buildSparkline(s.weekly)}</div>`;
     } catch {}
   }
 

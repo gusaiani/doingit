@@ -550,18 +550,44 @@ def done_stats(
     """, (user_id,))
     this_month = db.fetchone()["cnt"]
 
-    # Average per week over last 10 weeks
+    # Weeks since signup (capped at 10)
     db.execute("""
-        SELECT COUNT(*) AS cnt FROM done_items
-        WHERE user_id = %s AND done_at >= NOW() - INTERVAL '10 weeks'
+        SELECT GREATEST(1, LEAST(10,
+            CEIL(EXTRACT(EPOCH FROM NOW() - created_at) / (7*86400))
+        ))::int AS weeks
+        FROM users WHERE id = %s
     """, (user_id,))
-    total_10w = db.fetchone()["cnt"]
-    avg_per_week = round(total_10w / 10, 1)
+    max_weeks = db.fetchone()["weeks"]
+
+    # Weekly counts for sparkline (most recent max_weeks, oldest first)
+    db.execute("""
+        SELECT date_trunc('week', done_at) AS wk, COUNT(*) AS cnt
+        FROM done_items
+        WHERE user_id = %s AND done_at >= NOW() - make_interval(weeks => %s)
+        GROUP BY wk ORDER BY wk
+    """, (user_id, max_weeks))
+    rows = {r["wk"]: r["cnt"] for r in db.fetchall()}
+
+    # Build array of counts per week (oldest first)
+    from datetime import timedelta
+    now_trunc = db.execute("SELECT date_trunc('week', NOW()) AS wk")
+    current_wk = db.fetchone()["wk"]
+    weekly = []
+    for i in range(max_weeks - 1, -1, -1):
+        wk = current_wk - timedelta(weeks=i)
+        weekly.append(rows.get(wk, 0))
+
+    # Average per week over last 4 weeks (or fewer if signed up recently)
+    avg_weeks = min(4, max_weeks)
+    avg_total = sum(weekly[-avg_weeks:])
+    avg_per_week = round(avg_total / avg_weeks, 1)
 
     return {
-        "this_week": this_week,
         "this_month": this_month,
+        "this_week": this_week,
         "avg_per_week": avg_per_week,
+        "avg_weeks": avg_weeks,
+        "weekly": weekly,
     }
 
 

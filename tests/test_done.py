@@ -75,9 +75,11 @@ def test_done_stats(client, alice):
     r = client.get("/done/stats", headers=auth(alice["token"]))
     assert r.status_code == 200
     stats = r.json()
-    assert stats["this_week"] == 3
     assert stats["this_month"] == 3
-    assert stats["avg_per_week"] == 0.3  # 3 items / 10 weeks
+    assert stats["this_week"] == 3
+    assert stats["avg_per_week"] == 3.0  # 3 items / 1 week (new user)
+    assert stats["avg_weeks"] == 1
+    assert stats["weekly"] == [3]
 
 
 def test_done_requires_auth(client):

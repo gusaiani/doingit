@@ -1513,6 +1513,15 @@ html[data-theme="dark"] .sl-date-input { color-scheme: dark; }
   letter-spacing: 0;
 }
 
+.done-stat-spark {
+  justify-content: center;
+  min-width: auto;
+}
+
+.done-sparkline {
+  display: block;
+}
+
 .done-list {
   list-style: none;
 }

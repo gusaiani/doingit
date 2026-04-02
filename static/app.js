@@ -752,6 +752,10 @@ function esc(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function linkify(s) {
+  return esc(s).replace(/(https?:\/\/[^\s<>&"]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+}
+
 const taskTotalMs = t => t.sessions.reduce((a,s) => a + ((s.end ?? Date.now()) - s.start), 0);
 
 const taskTodayMs = t => t.sessions
@@ -1397,7 +1401,7 @@ function renderLater() {
       const itemHL = nav && nav.type === 'later-item' && nav.id === item.id ? ' nav-highlight' : '';
       return `
       <li class="later-item${itemHL}" data-id="${item.id}">
-        <span class="later-text">${esc(item.text)}</span>
+        <span class="later-text">${linkify(item.text)}</span>
         <button class="later-promote" data-id="${item.id}" title="start task">▶</button>
         <button class="later-done" data-id="${item.id}" title="mark done">✓</button>
         <button class="later-del" data-id="${item.id}">✕</button>
@@ -1550,7 +1554,7 @@ function render() {
       <div class="task-main${isRecent ? ' not-expandable' : ''}">
         <span class="t-shortcut">${i < 9 ? i + 1 : i === 9 ? 0 : ''}</span>
         <button class="t-play${isRunning ? ' pausing' : ''}" data-id="${task.id}" tabindex="-1">${isRunning ? '⏸' : '▶'}</button>
-        <span class="t-name">${esc(task.name)}</span>
+        <span class="t-name">${linkify(task.name)}</span>
         ${projectNameForTask(task) ? `<span class="t-project">#${esc(projectNameForTask(task))}</span>` : ''}
         <span class="t-dot"></span>
         ${isRecent ? '' : (() => {
@@ -2167,7 +2171,7 @@ async function initDonePage() {
     ul.innerHTML = allItems.map(item => {
       const d = new Date(item.done_at);
       const dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-      return `<li class="done-item"><span class="done-item-check">✓</span><span class="done-item-text">${esc(item.text)}</span><span class="done-item-date">${dateStr}</span></li>`;
+      return `<li class="done-item"><span class="done-item-check">✓</span><span class="done-item-text">${linkify(item.text)}</span><span class="done-item-date">${dateStr}</span></li>`;
     }).join('');
   }
 

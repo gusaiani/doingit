@@ -662,7 +662,10 @@ def monthly_report(
         for r in db.fetchall()
     ]
     total_ms = sum(t["total_ms"] for t in tasks)
-    return {"tasks": tasks, "total_ms": total_ms}
+    from datetime import datetime, timezone
+    period_start = datetime.fromtimestamp(thirty_days_ago_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+    period_end = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return {"tasks": tasks, "total_ms": total_ms, "period_start": period_start, "period_end": period_end}
 
 
 def count_today_sessions(user_id: int, db) -> int:

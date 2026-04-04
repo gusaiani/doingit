@@ -1605,6 +1605,12 @@ html[data-theme="dark"] .sl-date-input { color-scheme: dark; }
   margin-bottom: 24px;
 }
 
+.report-period {
+  font-size: 14px;
+  color: var(--dimmer);
+  margin-bottom: 8px;
+}
+
 .report-total {
   display: flex;
   justify-content: space-between;

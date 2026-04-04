@@ -31,6 +31,8 @@ def test_report_empty(client, alice):
     body = r.json()
     assert body["tasks"] == []
     assert body["total_ms"] == 0
+    assert "period_start" in body
+    assert "period_end" in body
 
 
 def test_report_includes_recent_sessions(client, alice):

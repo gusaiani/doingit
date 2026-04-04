@@ -2215,12 +2215,115 @@ async function initDonePage() {
   await Promise.all([loadStats(), loadMore()]);
 }
 
+// ── Report page ──────────────────────────────────────────────────────────────
+
+function isReportPage() { return location.pathname === '/report'; }
+
+function fmtHM(ms) {
+  const totalMin = Math.floor(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h === 0) return `${m}m`;
+  return `${h}h ${m}m`;
+}
+
+async function initReportPage() {
+  document.getElementById('app').innerHTML = `
+    <div class="theme-bar">
+      <button class="header-theme" id="theme-toggle-report" title="Toggle theme"></button>
+    </div>
+    <div class="report-page">
+      <div class="report-header">
+        <a href="/" class="done-back">← Back</a>
+        <h1 class="done-title">Monthly Report</h1>
+      </div>
+      <div class="report-content" id="report-content">
+        <div class="done-loading">Loading…</div>
+      </div>
+    </div>`;
+
+  const btn = document.getElementById('theme-toggle-report');
+  const saved = localStorage.getItem(THEME_KEY) || 'light';
+  btn.innerHTML = THEME_ICONS[saved];
+  btn.addEventListener('click', () => { cycleTheme(); btn.innerHTML = THEME_ICONS[localStorage.getItem(THEME_KEY) || 'light']; });
+
+  const token = localStorage.getItem('tt_token');
+  const contentEl = document.getElementById('report-content');
+
+  if (!token) {
+    // Guest mode: compute from localStorage
+    const guestData = JSON.parse(localStorage.getItem(GUEST_KEY) || '{"tasks":[]}');
+    const thirtyDaysAgo = Date.now() - 30 * 86400 * 1000;
+    const tasks = guestData.tasks
+      .map(t => {
+        const sessions = (t.sessions || []).filter(s => s.end && s.start >= thirtyDaysAgo);
+        const total_ms = sessions.reduce((a, s) => a + (s.end - s.start), 0);
+        return { name: t.name, total_ms, session_count: sessions.length };
+      })
+      .filter(t => t.total_ms > 0)
+      .sort((a, b) => b.total_ms - a.total_ms);
+    const total_ms = tasks.reduce((a, t) => a + t.total_ms, 0);
+    renderReport(contentEl, { tasks, total_ms });
+    return;
+  }
+
+  try {
+    const r = await fetch('/report/monthly', { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!r.ok) { contentEl.innerHTML = '<div class="done-empty">Could not load report.</div>'; return; }
+    const data = await r.json();
+    renderReport(contentEl, data);
+  } catch {
+    contentEl.innerHTML = '<div class="done-empty">Could not load report.</div>';
+  }
+}
+
+const REPORT_COLORS = [
+  '#4f86f7', '#f7694f', '#50c878', '#f7b84f', '#a66ff7',
+  '#f74f9a', '#4fc8f7', '#f7d94f', '#6ff7a6', '#f74f4f',
+  '#7b68ee', '#ff8c42', '#3cb371', '#e06cf7', '#42b0ff',
+];
+
+function renderReport(el, data) {
+  if (data.tasks.length === 0) {
+    el.innerHTML = '<div class="done-empty">No tracked time in the last 30 days.</div>';
+    return;
+  }
+
+  const maxMs = data.tasks[0].total_ms;
+
+  const rows = data.tasks.map((t, i) => {
+    const pct = Math.max(2, Math.round(t.total_ms / maxMs * 100));
+    const color = REPORT_COLORS[i % REPORT_COLORS.length];
+    return `
+      <div class="report-row">
+        <div class="report-task-info">
+          <span class="report-task-name">${esc(t.name)}</span>
+          <span class="report-task-meta">${t.session_count} session${t.session_count === 1 ? '' : 's'}</span>
+        </div>
+        <div class="report-bar-wrap">
+          <div class="report-bar" style="width:${pct}%;background:${color}"></div>
+        </div>
+        <span class="report-task-time">${fmtHM(t.total_ms)}</span>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="report-total">
+      <span class="report-total-label">Total</span>
+      <span class="report-total-time">${fmtHM(data.total_ms)}</span>
+    </div>
+    <div class="report-rows">${rows}</div>`;
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 window.onGoogleLibraryLoad = initGoogleButton; // fires when GIS script finishes loading
 loadGoogleAuth();                               // fetches client_id from backend
 if (isDonePage()) {
   applyTheme();
   initDonePage();
+} else if (isReportPage()) {
+  applyTheme();
+  initReportPage();
 } else {
   load();
 }

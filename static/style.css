@@ -1581,3 +1581,103 @@ html[data-theme="dark"] .sl-date-input { color-scheme: dark; }
   font-size: 14px;
   color: var(--dimmer);
 }
+
+.report-link {
+  display: block;
+  font-size: 13px;
+  color: var(--dimmer);
+  text-decoration: none;
+  margin: 8px 0 16px;
+}
+.report-link:hover { color: var(--accent); }
+
+/* ── Report page ── */
+.report-page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.report-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.report-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.report-total-label {
+  font-size: 14px;
+  color: var(--dimmer);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.report-total-time {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.report-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.report-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.report-task-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.report-task-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.report-task-meta {
+  font-size: 11px;
+  color: var(--dimmer);
+}
+
+.report-bar-wrap {
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.report-bar {
+  height: 100%;
+  border-radius: 4px;
+  min-width: 4px;
+}
+
+.report-task-time {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+  white-space: nowrap;
+  min-width: 60px;
+  text-align: right;
+}

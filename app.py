@@ -639,6 +639,32 @@ def done_stats(
     }
 
 
+@app.get("/report/monthly")
+def monthly_report(
+    user_id: Annotated[int, Depends(current_user_id)],
+    db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
+):
+    thirty_days_ago_ms = int((time.time() - 30 * 86400) * 1000)
+    db.execute("""
+        SELECT t.name,
+               SUM(s.end_ts - s.start_ts) AS total_ms,
+               COUNT(*) AS session_count
+        FROM sessions s
+        JOIN tasks t ON t.id = s.task_id AND t.user_id = s.user_id
+        WHERE s.user_id = %s
+          AND s.start_ts >= %s
+          AND s.end_ts IS NOT NULL
+        GROUP BY t.name
+        ORDER BY total_ms DESC
+    """, (user_id, thirty_days_ago_ms))
+    tasks = [
+        {"name": r["name"], "total_ms": int(r["total_ms"]), "session_count": r["session_count"]}
+        for r in db.fetchall()
+    ]
+    total_ms = sum(t["total_ms"] for t in tasks)
+    return {"tasks": tasks, "total_ms": total_ms}
+
+
 def count_today_sessions(user_id: int, db) -> int:
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     db.execute("""
@@ -805,6 +831,11 @@ def favicon_local():
 
 @app.get("/done-list")
 def done_page():
+    return FileResponse("index.html")
+
+
+@app.get("/report")
+def report_page():
     return FileResponse("index.html")
 
 

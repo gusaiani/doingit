@@ -1687,3 +1687,50 @@ html[data-theme="dark"] .sl-date-input { color-scheme: dark; }
   min-width: 60px;
   text-align: right;
 }
+
+/* ── Shared view ───────────────────────────────────────────────────────────── */
+
+.shared-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.shared-cta-link {
+  color: #fff;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.shared-view .search-row,
+.shared-view #search-create-hint,
+.shared-view #later-input,
+.shared-view #later-header,
+.shared-view .search-hint,
+.shared-view #project-autocomplete,
+.shared-view #header-logout,
+.shared-view #header-signin,
+.shared-view #header-upgrade,
+.shared-view #header-manage,
+.shared-view #header-share,
+.shared-view #header-vip,
+.shared-view #header-pomodoro,
+.shared-view #header-pomodoro-mins,
+.shared-view #guest-banner,
+.shared-view .task-del,
+.shared-view .sl-del,
+.shared-view .dtd-del,
+.shared-view .later-del,
+.shared-view .later-done,
+.shared-view .later-promote,
+.shared-view .header-about,
+.shared-view #billing-success-banner,
+.shared-view .share-footer {
+  display: none !important;
+}

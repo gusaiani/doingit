@@ -2377,26 +2377,33 @@ function sharedCTABanner() {
   </div>`;
 }
 
+async function fetchSharedData() {
+  try {
+    const r = await fetch(`/shared/${SHARED_TOKEN}/data`);
+    if (!r.ok) return false;
+    data = await r.json();
+    ensureDataShape();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function initSharedView() {
   document.body.classList.add('shared-view');
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('guest-banner').style.display = 'none';
 
-  try {
-    const r = await fetch(`/shared/${SHARED_TOKEN}/data`);
-    if (!r.ok) {
-      document.getElementById('app').innerHTML = sharedCTABanner() +
-        '<div class="done-page"><div class="done-empty">Shared profile not found.</div></div>';
-      return;
-    }
-    data = await r.json();
-    ensureDataShape();
-    if (data.theme) {
-      localStorage.setItem(THEME_KEY, data.theme);
-      applyTheme();
-    }
-  } catch {
-    data = { tasks: [], later: [], projects: [] };
+  const ok = await fetchSharedData();
+  if (!ok) {
+    document.getElementById('app').innerHTML = sharedCTABanner() +
+      '<div class="done-page"><div class="done-empty">Shared profile not found.</div></div>';
+    return;
+  }
+
+  if (data.theme) {
+    localStorage.setItem(THEME_KEY, data.theme);
+    applyTheme();
   }
 
   // Insert CTA before the app content
@@ -2410,6 +2417,11 @@ async function initSharedView() {
 
   render();
   ensureTick();
+
+  // Poll for live updates
+  setInterval(async () => {
+    if (await fetchSharedData()) { render(); }
+  }, 5000);
 }
 
 async function initSharedDonePage() {

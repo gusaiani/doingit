@@ -2263,7 +2263,9 @@ async function initReportPage() {
       .filter(t => t.total_ms > 0)
       .sort((a, b) => b.total_ms - a.total_ms);
     const total_ms = tasks.reduce((a, t) => a + t.total_ms, 0);
-    renderReport(contentEl, { tasks, total_ms });
+    const period_start = new Date(thirtyDaysAgo).toISOString().slice(0, 10);
+    const period_end = new Date().toISOString().slice(0, 10);
+    renderReport(contentEl, { tasks, total_ms, period_start, period_end });
     return;
   }
 
@@ -2307,7 +2309,16 @@ function renderReport(el, data) {
       </div>`;
   }).join('');
 
+  const fmtDate = iso => {
+    const d = new Date(iso + 'T12:00:00');
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
+  const periodLabel = data.period_start && data.period_end
+    ? `${fmtDate(data.period_start)} – ${fmtDate(data.period_end)}`
+    : 'Last 30 days';
+
   el.innerHTML = `
+    <div class="report-period">${periodLabel}</div>
     <div class="report-total">
       <span class="report-total-label">Total</span>
       <span class="report-total-time">${fmtHM(data.total_ms)}</span>

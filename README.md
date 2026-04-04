@@ -214,6 +214,27 @@ Later items can be marked as done. Each later item shows a green ✓ button (to 
 | `GET` | `/done?offset=0&limit=50` | Paginated list of done items |
 | `GET` | `/done/stats` | Stats: `this_week`, `this_month`, `avg_per_week` |
 
+## Shared profile
+
+Logged-in users can share a read-only view of their tasks, history, done list, and monthly report with anyone via a unique link.
+
+**How it works**
+
+1. Click the "share" button in the header. The app calls `POST /share/enable`, which generates a UUID share token for the user (or returns the existing one) and copies the link to the clipboard.
+2. The link looks like `https://doingit.online/shared/<uuid>`. Anyone who opens it sees the user's live tasks, history, done list, and monthly report — all read-only, no login required.
+3. Viewers who are not logged in see a prominent call-to-action banner at the top inviting them to try Doing It.
+4. All interactive elements (search, session controls, delete buttons, later input) are hidden in shared view. Data is fetched from public `/shared/{token}/*` endpoints that require no authentication.
+
+**API endpoints**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/share/enable` | Generate or return existing share token (auth required) |
+| `GET` | `/shared/{token}/data` | Public: tasks, later items, theme, projects |
+| `GET` | `/shared/{token}/done` | Public: paginated done items |
+| `GET` | `/shared/{token}/done/stats` | Public: done stats and sparkline |
+| `GET` | `/shared/{token}/report/monthly` | Public: 30-day time report |
+
 ## Data
 
 All task data is stored per-user in a Postgres database. Locally this is the `tt` database on your Postgres.app instance. In production it's the Fly.io Postgres cluster attached to the app.

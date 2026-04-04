@@ -108,6 +108,7 @@ def init_db():
                     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ")
                     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_comped BOOLEAN DEFAULT FALSE")
                     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS theme TEXT")
+                    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS share_token TEXT UNIQUE")
 
                     # ── New normalized tables ────────────────────────────────
                     cur.execute("""
@@ -240,6 +241,14 @@ def current_user_id(
 def make_token(user_id: int) -> str:
     expire = datetime.now(timezone.utc) + timedelta(days=TOKEN_EXPIRE_DAYS)
     return jwt.encode({"sub": str(user_id), "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def user_id_from_share_token(token: str, db) -> int:
+    db.execute("SELECT id FROM users WHERE share_token = %s", (token,))
+    row = db.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Shared profile not found")
+    return row["id"]
 
 
 class AuthRequest(BaseModel):
@@ -394,11 +403,7 @@ def merge_projects_from_blob(tasks: list, blob_json: str | None) -> tuple[list, 
     return tasks, projects
 
 
-@app.get("/data")
-def get_data(
-    user_id: Annotated[int, Depends(current_user_id)],
-    db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
-):
+def _fetch_data(user_id: int, db):
     db.execute("""
         SELECT
             t.id,
@@ -436,7 +441,15 @@ def get_data(
     blob_json = blob_row["tasks_json"] if blob_row else None
     tasks, projects = merge_projects_from_blob(tasks, blob_json)
 
-    return JSONResponse({"tasks": tasks, "later": later, "theme": theme, "projects": projects})
+    return {"tasks": tasks, "later": later, "theme": theme, "projects": projects}
+
+
+@app.get("/data")
+def get_data(
+    user_id: Annotated[int, Depends(current_user_id)],
+    db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
+):
+    return JSONResponse(_fetch_data(user_id, db))
 
 
 @app.post("/data", status_code=204)
@@ -557,13 +570,7 @@ def mark_done(
     return {"ok": True}
 
 
-@app.get("/done")
-def get_done(
-    user_id: Annotated[int, Depends(current_user_id)],
-    db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
-    offset: int = 0,
-    limit: int = 50,
-):
+def _fetch_done(user_id: int, db, offset: int = 0, limit: int = 50):
     limit = min(limit, 100)
     db.execute(
         "SELECT id, text, done_at FROM done_items "
@@ -579,11 +586,17 @@ def get_done(
     return {"items": items, "total": total}
 
 
-@app.get("/done/stats")
-def done_stats(
+@app.get("/done")
+def get_done(
     user_id: Annotated[int, Depends(current_user_id)],
     db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
+    offset: int = 0,
+    limit: int = 50,
 ):
+    return _fetch_done(user_id, db, offset, limit)
+
+
+def _fetch_done_stats(user_id: int, db):
     # Done this week (Monday-based)
     db.execute("""
         SELECT COUNT(*) AS cnt FROM done_items
@@ -639,11 +652,15 @@ def done_stats(
     }
 
 
-@app.get("/report/monthly")
-def monthly_report(
+@app.get("/done/stats")
+def done_stats(
     user_id: Annotated[int, Depends(current_user_id)],
     db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
 ):
+    return _fetch_done_stats(user_id, db)
+
+
+def _fetch_monthly_report(user_id: int, db):
     thirty_days_ago_ms = int((time.time() - 30 * 86400) * 1000)
     db.execute("""
         SELECT t.name,
@@ -662,10 +679,62 @@ def monthly_report(
         for r in db.fetchall()
     ]
     total_ms = sum(t["total_ms"] for t in tasks)
-    from datetime import datetime, timezone
     period_start = datetime.fromtimestamp(thirty_days_ago_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
     period_end = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return {"tasks": tasks, "total_ms": total_ms, "period_start": period_start, "period_end": period_end}
+
+
+@app.get("/report/monthly")
+def monthly_report(
+    user_id: Annotated[int, Depends(current_user_id)],
+    db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
+):
+    return _fetch_monthly_report(user_id, db)
+
+
+# ── Share endpoints ──────────────────────────────────────────────────────────
+
+@app.post("/share/enable")
+def share_enable(
+    user_id: Annotated[int, Depends(current_user_id)],
+    db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
+):
+    db.execute("SELECT share_token FROM users WHERE id = %s", (user_id,))
+    row = db.fetchone()
+    if row and row["share_token"]:
+        return {"share_token": row["share_token"]}
+    token = str(uuid_mod.uuid4())
+    db.execute("UPDATE users SET share_token = %s WHERE id = %s", (token, user_id))
+    return {"share_token": token}
+
+
+@app.get("/shared/{token}/data")
+def shared_get_data(token: str, db: Annotated[psycopg2.extensions.cursor, Depends(get_db)]):
+    uid = user_id_from_share_token(token, db)
+    return JSONResponse(_fetch_data(uid, db))
+
+
+@app.get("/shared/{token}/done")
+def shared_get_done(
+    token: str,
+    db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
+    offset: int = 0,
+    limit: int = 50,
+):
+    uid = user_id_from_share_token(token, db)
+    return _fetch_done(uid, db, offset, limit)
+
+
+@app.get("/shared/{token}/done/stats")
+def shared_done_stats(token: str, db: Annotated[psycopg2.extensions.cursor, Depends(get_db)]):
+    uid = user_id_from_share_token(token, db)
+    return _fetch_done_stats(uid, db)
+
+
+@app.get("/shared/{token}/report/monthly")
+def shared_monthly_report(token: str, db: Annotated[psycopg2.extensions.cursor, Depends(get_db)]):
+    uid = user_id_from_share_token(token, db)
+    return _fetch_monthly_report(uid, db)
 
 
 def count_today_sessions(user_id: int, db) -> int:
@@ -830,6 +899,21 @@ def billing_success():
 @app.get("/favicon-local.png")
 def favicon_local():
     return FileResponse("favicon-local.png", media_type="image/png")
+
+
+@app.get("/shared/{token}")
+def shared_root(token: str):
+    return FileResponse("index.html")
+
+
+@app.get("/shared/{token}/done-list")
+def shared_done_page(token: str):
+    return FileResponse("index.html")
+
+
+@app.get("/shared/{token}/report")
+def shared_report_page(token: str):
+    return FileResponse("index.html")
 
 
 @app.get("/done-list")

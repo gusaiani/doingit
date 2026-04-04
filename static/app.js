@@ -42,6 +42,11 @@ function persistTheme() {
 
 applyTheme();
 
+// ── Shared view ──────────────────────────────────────────────────────────────
+const SHARED_MATCH = location.pathname.match(/^\/shared\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
+const SHARED_TOKEN = SHARED_MATCH ? SHARED_MATCH[1] : null;
+const IS_SHARED = !!SHARED_TOKEN;
+
 // ── Persistence ───────────────────────────────────────────────────────────────
 const GUEST_KEY        = 'tt_guest_tasks';
 const GUEST_DONE_KEY   = 'tt_guest_done';
@@ -223,6 +228,7 @@ bc.onmessage = e => {
 };
 
 function persist() {
+  if (IS_SHARED) return;
   const token = localStorage.getItem('tt_token');
   if (!token) {
     localStorage.setItem(GUEST_KEY, JSON.stringify(data));
@@ -341,6 +347,7 @@ function showGuestMode() {
   document.getElementById('guest-banner').style.display = 'block';
   document.getElementById('header-signin').style.display = '';
   document.getElementById('header-logout').style.display = 'none';
+  document.getElementById('header-share').style.display = 'none';
   subscriptionStatus = 'free';
   isComped = false;
   updateBillingUI();
@@ -350,6 +357,7 @@ function showUserMode() {
   document.getElementById('guest-banner').style.display = 'none';
   document.getElementById('header-signin').style.display = 'none';
   document.getElementById('header-logout').style.display = '';
+  document.getElementById('header-share').style.display = '';
   updateBillingUI();
 }
 
@@ -620,6 +628,29 @@ document.getElementById('header-signin').addEventListener('click', () => {
 
 document.getElementById('auth-close').addEventListener('click', hideAuth);
 
+document.getElementById('header-share').addEventListener('click', async () => {
+  const token = localStorage.getItem('tt_token');
+  if (!token) return;
+  try {
+    const r = await fetch('/share/enable', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!r.ok) return;
+    const { share_token } = await r.json();
+    const url = `${location.origin}/shared/${share_token}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      prompt('Copy your share link:', url);
+      return;
+    }
+    const btn = document.getElementById('header-share');
+    btn.textContent = 'copied!';
+    setTimeout(() => { btn.textContent = 'share'; }, 2000);
+  } catch {}
+});
+
 // ── Pomodoro ──────────────────────────────────────────────────────────────────
 let pomodoroActive = localStorage.getItem('tt_pomodoro_active') === 'true';
 let pomodoroTimer  = null;
@@ -782,7 +813,7 @@ function allWeekMs() {
 // ── Actions ───────────────────────────────────────────────────────────────────
 let _startingTask = false;
 async function startTask(task) {
-  if (_startingTask) return;
+  if (IS_SHARED || _startingTask) return;
   _startingTask = true;
   try {
   const isRunning = task.sessions.some(s => !s.end);
@@ -813,6 +844,7 @@ async function startTask(task) {
 }
 
 function deleteTask(id) {
+  if (IS_SHARED) return;
   const task = data.tasks.find(t => t.id === id);
   if (!task) return;
   if (!confirm(`Delete "${taskLabel(task)}" and all its history?`)) return;
@@ -823,6 +855,7 @@ function deleteTask(id) {
 }
 
 function deleteSession(taskId, sessionStart) {
+  if (IS_SHARED) return;
   const task = data.tasks.find(t => t.id === taskId);
   if (!task) return;
   if (!confirm('Delete this time entry?')) return;
@@ -1217,6 +1250,7 @@ function tasksForDay(dateStr) {
 }
 
 function deleteTaskDay(taskId, dateStr) {
+  if (IS_SHARED) return;
   const task = data.tasks.find(t => t.id === taskId);
   if (!task) return;
   if (!confirm(`Delete all "${taskLabel(task)}" sessions for ${dateStr}?`)) return;
@@ -1340,18 +1374,21 @@ historyEl.addEventListener('click', async e => {
 
 // ── Later list ────────────────────────────────────────────────────────────────
 function addLaterItem(text) {
+  if (IS_SHARED) return;
   data.later.push({ id: crypto.randomUUID(), text });
   persist();
   render();
 }
 
 function deleteLaterItem(id) {
+  if (IS_SHARED) return;
   data.later = data.later.filter(i => i.id !== id);
   persist();
   render();
 }
 
 function markLaterDone(id) {
+  if (IS_SHARED) return;
   const item = data.later.find(i => i.id === id);
   if (!item) return;
   data.later = data.later.filter(i => i.id !== id);
@@ -1372,6 +1409,7 @@ function markLaterDone(id) {
 }
 
 async function promoteToTask(id) {
+  if (IS_SHARED) return;
   const item = data.later.find(i => i.id === id);
   if (!item) return;
   const task = createOrFindTaskFromQuery(item.text);
@@ -2326,10 +2364,178 @@ function renderReport(el, data) {
     <div class="report-rows">${rows}</div>`;
 }
 
+// ── Shared view ─────────────────────────────────────────────────────────────
+
+function sharedSubPath() {
+  return location.pathname.replace(`/shared/${SHARED_TOKEN}`, '') || '/';
+}
+
+function sharedCTABanner() {
+  return `<div class="shared-cta">
+    <span>You're viewing a shared profile.</span>
+    <a href="/" class="shared-cta-link">Try Doing It — it's free</a>
+  </div>`;
+}
+
+async function initSharedView() {
+  document.body.classList.add('shared-view');
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('guest-banner').style.display = 'none';
+
+  try {
+    const r = await fetch(`/shared/${SHARED_TOKEN}/data`);
+    if (!r.ok) {
+      document.getElementById('app').innerHTML = sharedCTABanner() +
+        '<div class="done-page"><div class="done-empty">Shared profile not found.</div></div>';
+      return;
+    }
+    data = await r.json();
+    ensureDataShape();
+    if (data.theme) {
+      localStorage.setItem(THEME_KEY, data.theme);
+      applyTheme();
+    }
+  } catch {
+    data = { tasks: [], later: [], projects: [] };
+  }
+
+  // Insert CTA before the app content
+  document.getElementById('app').insertAdjacentHTML('afterbegin', sharedCTABanner());
+
+  // Update links to point to shared versions
+  const reportLink = document.getElementById('report-link');
+  if (reportLink) reportLink.href = `/shared/${SHARED_TOKEN}/report`;
+  const doneLink = document.getElementById('later-done-link');
+  if (doneLink) doneLink.href = `/shared/${SHARED_TOKEN}/done-list`;
+
+  render();
+  ensureTick();
+}
+
+async function initSharedDonePage() {
+  document.body.classList.add('shared-view');
+  document.getElementById('app').innerHTML = sharedCTABanner() + `
+    <div class="theme-bar">
+      <button class="header-theme" id="theme-toggle-done" title="Toggle theme"></button>
+    </div>
+    <div class="done-page">
+      <div class="done-header">
+        <a href="/shared/${SHARED_TOKEN}" class="done-back">\u2190 Back</a>
+        <h1 class="done-title">Done</h1>
+      </div>
+      <div class="done-stats" id="done-stats"></div>
+      <ul class="done-list" id="done-list"></ul>
+      <div class="done-loading" id="done-loading" style="display:none">Loading\u2026</div>
+      <div class="done-empty" id="done-empty" style="display:none">No items marked as done yet.</div>
+    </div>`;
+
+  const btn = document.getElementById('theme-toggle-done');
+  const saved = localStorage.getItem(THEME_KEY) || 'light';
+  btn.innerHTML = THEME_ICONS[saved];
+  btn.addEventListener('click', () => { cycleTheme(); btn.innerHTML = THEME_ICONS[localStorage.getItem(THEME_KEY) || 'light']; });
+
+  let allItems = [];
+  let total = 0;
+  let offset = 0;
+  const PAGE = 50;
+
+  async function loadStats() {
+    const statsEl = document.getElementById('done-stats');
+    try {
+      const r = await fetch(`/shared/${SHARED_TOKEN}/done/stats`);
+      if (!r.ok) return;
+      const s = await r.json();
+      statsEl.innerHTML = `
+        <div class="done-stat"><span class="done-stat-value">${s.this_month}</span><span class="done-stat-label">this month</span></div>
+        <div class="done-stat"><span class="done-stat-value">${s.this_week}</span><span class="done-stat-label">this week</span></div>
+        <div class="done-stat"><span class="done-stat-value">${s.avg_per_week}</span><span class="done-stat-label">avg / week<span class="done-stat-sub">(last ${s.avg_weeks} week${s.avg_weeks === 1 ? '' : 's'})</span></span></div>
+        <div class="done-stat done-stat-spark">${buildSparkline(s.weekly)}</div>`;
+    } catch {}
+  }
+
+  function renderItems() {
+    const ul = document.getElementById('done-list');
+    ul.innerHTML = allItems.map(item => {
+      const d = new Date(item.done_at);
+      const dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      return `<li class="done-item"><span class="done-item-check">\u2713</span><span class="done-item-text">${linkify(item.text)}</span><span class="done-item-date">${dateStr}</span></li>`;
+    }).join('');
+  }
+
+  async function loadMore() {
+    const loadingEl = document.getElementById('done-loading');
+    const emptyEl = document.getElementById('done-empty');
+    loadingEl.style.display = 'block';
+    try {
+      const r = await fetch(`/shared/${SHARED_TOKEN}/done?offset=${offset}&limit=${PAGE}`);
+      if (!r.ok) { loadingEl.style.display = 'none'; return; }
+      const body = await r.json();
+      total = body.total;
+      allItems = allItems.concat(body.items);
+      offset += body.items.length;
+    } catch { loadingEl.style.display = 'none'; return; }
+    loadingEl.style.display = 'none';
+    if (allItems.length === 0) { emptyEl.style.display = 'block'; return; }
+    renderItems();
+  }
+
+  window.addEventListener('scroll', () => {
+    if (sharedSubPath() !== '/done-list') return;
+    if (offset >= total) return;
+    if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 200) {
+      loadMore();
+    }
+  });
+
+  await Promise.all([loadStats(), loadMore()]);
+}
+
+async function initSharedReportPage() {
+  document.body.classList.add('shared-view');
+  document.getElementById('app').innerHTML = sharedCTABanner() + `
+    <div class="theme-bar">
+      <button class="header-theme" id="theme-toggle-report" title="Toggle theme"></button>
+    </div>
+    <div class="report-page">
+      <div class="report-header">
+        <a href="/shared/${SHARED_TOKEN}" class="done-back">\u2190 Back</a>
+        <h1 class="done-title">Monthly Report</h1>
+      </div>
+      <div class="report-content" id="report-content">
+        <div class="done-loading">Loading\u2026</div>
+      </div>
+    </div>`;
+
+  const btn = document.getElementById('theme-toggle-report');
+  const saved = localStorage.getItem(THEME_KEY) || 'light';
+  btn.innerHTML = THEME_ICONS[saved];
+  btn.addEventListener('click', () => { cycleTheme(); btn.innerHTML = THEME_ICONS[localStorage.getItem(THEME_KEY) || 'light']; });
+
+  const contentEl = document.getElementById('report-content');
+  try {
+    const r = await fetch(`/shared/${SHARED_TOKEN}/report/monthly`);
+    if (!r.ok) { contentEl.innerHTML = '<div class="done-empty">Could not load report.</div>'; return; }
+    const data = await r.json();
+    renderReport(contentEl, data);
+  } catch {
+    contentEl.innerHTML = '<div class="done-empty">Could not load report.</div>';
+  }
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 window.onGoogleLibraryLoad = initGoogleButton; // fires when GIS script finishes loading
 loadGoogleAuth();                               // fetches client_id from backend
-if (isDonePage()) {
+if (IS_SHARED) {
+  applyTheme();
+  const sub = sharedSubPath();
+  if (sub === '/done-list') {
+    initSharedDonePage();
+  } else if (sub === '/report') {
+    initSharedReportPage();
+  } else {
+    initSharedView();
+  }
+} else if (isDonePage()) {
   applyTheme();
   initDonePage();
 } else if (isReportPage()) {

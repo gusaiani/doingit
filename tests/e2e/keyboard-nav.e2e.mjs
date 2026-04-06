@@ -168,22 +168,22 @@ test.describe('Keyboard navigation', () => {
     await page.keyboard.press('j');
     await expect(page.locator('#total-row')).toHaveClass(/nav-highlight/);
 
-    // j → first task (Alpha)
+    // j → first task (Bravo — most recently finished session)
     await page.keyboard.press('j');
     await expect(page.locator('#total-row')).not.toHaveClass(/nav-highlight/);
-    const alphaRow = page.locator('.task-row', { has: page.locator('.t-name:text-is("Alpha")') });
-    await expect(alphaRow).toHaveClass(/selected/);
-
-    // j → second task (Bravo)
-    await page.keyboard.press('j');
-    await expect(alphaRow).not.toHaveClass(/selected/);
     const bravoRow = page.locator('.task-row', { has: page.locator('.t-name:text-is("Bravo")') });
     await expect(bravoRow).toHaveClass(/selected/);
 
-    // k → back to Alpha
-    await page.keyboard.press('k');
-    await expect(alphaRow).toHaveClass(/selected/);
+    // j → second task (Alpha)
+    await page.keyboard.press('j');
     await expect(bravoRow).not.toHaveClass(/selected/);
+    const alphaRow = page.locator('.task-row', { has: page.locator('.t-name:text-is("Alpha")') });
+    await expect(alphaRow).toHaveClass(/selected/);
+
+    // k → back to Bravo
+    await page.keyboard.press('k');
+    await expect(bravoRow).toHaveClass(/selected/);
+    await expect(alphaRow).not.toHaveClass(/selected/);
 
     // k → back to TODAY
     await page.keyboard.press('k');

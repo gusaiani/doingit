@@ -694,6 +694,17 @@ def monthly_report(
 
 # ── Share endpoints ──────────────────────────────────────────────────────────
 
+@app.get("/share/status")
+def share_status(
+    user_id: Annotated[int, Depends(current_user_id)],
+    db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
+):
+    db.execute("SELECT share_token FROM users WHERE id = %s", (user_id,))
+    row = db.fetchone()
+    token = row["share_token"] if row else None
+    return {"enabled": bool(token), "share_token": token}
+
+
 @app.post("/share/enable")
 def share_enable(
     user_id: Annotated[int, Depends(current_user_id)],
@@ -706,6 +717,15 @@ def share_enable(
     token = str(uuid_mod.uuid4())
     db.execute("UPDATE users SET share_token = %s WHERE id = %s", (token, user_id))
     return {"share_token": token}
+
+
+@app.post("/share/disable")
+def share_disable(
+    user_id: Annotated[int, Depends(current_user_id)],
+    db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
+):
+    db.execute("UPDATE users SET share_token = NULL WHERE id = %s", (user_id,))
+    return {"ok": True}
 
 
 @app.get("/shared/{token}/data")

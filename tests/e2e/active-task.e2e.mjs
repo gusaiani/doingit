@@ -90,8 +90,8 @@ test.describe('Active task sorting', () => {
     // Stop Beta
     await page.keyboard.press('Escape');
 
-    // Alpha should now be first (has more today-time)
-    await expect(page.locator('.task-row .t-name').first()).toHaveText('Alpha');
+    // Beta should still be first (most recently finished session)
+    await expect(page.locator('.task-row .t-name').first()).toHaveText('Beta');
   });
 });
 

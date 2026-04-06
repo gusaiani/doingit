@@ -757,6 +757,7 @@ pomodoroBtn.addEventListener('click', () => {
 
 function clearPomodoroTimer() {
   if (pomodoroTimer) { clearTimeout(pomodoroTimer); pomodoroTimer = null; }
+  pomodoroBtn.classList.remove('ringing');
 }
 
 let _audioCtx = null;

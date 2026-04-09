@@ -221,6 +221,39 @@ Later items can be marked as done. Each later item shows a green ✓ button (to 
 | `GET` | `/done?offset=0&limit=50` | Paginated list of done items |
 | `GET` | `/done/stats` | Stats: `this_week`, `this_month`, `avg_per_week` |
 
+## Shared profile
+
+Logged-in users can share a read-only view of their tasks, history, done list, and monthly report with anyone via a unique link.
+
+**How it works**
+
+1. Click "share live view" in the top bar (next to the theme toggle). A popover opens with an Enable/Disable toggle.
+2. Click "Enable" to generate a share link. The link appears in the popover with a "Copy" button.
+3. The link looks like `https://doingit.online/shared/<uuid>`. Anyone who opens it sees the user's live tasks, history, done list, and monthly report — all read-only, no login required. The shared view polls every 5 seconds for live updates.
+4. Click "Disable" to revoke the share token. Existing links stop working.
+5. Viewers who are not logged in see a prominent call-to-action banner at the top inviting them to try Doing It.
+6. All interactive elements (search, session controls, delete buttons, later input) are hidden in shared view. Data is fetched from public `/shared/{token}/*` endpoints that require no authentication.
+
+**API endpoints**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/share/status` | Check if sharing is enabled and get token (auth required) |
+| `POST` | `/share/enable` | Generate or return existing share token (auth required) |
+| `POST` | `/share/disable` | Revoke share token (auth required) |
+| `GET` | `/shared/{token}/data` | Public: tasks, later items, theme, projects |
+| `GET` | `/shared/{token}/done` | Public: paginated done items |
+| `GET` | `/shared/{token}/done/stats` | Public: done stats and sparkline |
+| `GET` | `/shared/{token}/report/monthly` | Public: 30-day time report |
+
+## Task ordering
+
+Today's tasks are ordered by most recently finished session. When you stop a running task, it stays at the top of the list. Running tasks always appear first, followed by tasks sorted by their latest completed session timestamp (descending). This means the task you just worked on is always easy to find.
+
+## Later list drag-and-drop
+
+Later (to-do) items can be reordered by dragging. Hover over an item to reveal the drag handle on the left (same position as the shortcut numbers in the task list). Drag an item up or down to change its position. New items are added at the top of the list.
+
 ## Data
 
 All task data is stored per-user in a Postgres database. Locally this is the `tt` database on your Postgres.app instance. In production it's the Fly.io Postgres cluster attached to the app.

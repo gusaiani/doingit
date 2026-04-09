@@ -75,9 +75,50 @@ def test_done_stats(client, alice):
     r = client.get("/done/stats", headers=auth(alice["token"]))
     assert r.status_code == 200
     stats = r.json()
-    assert stats["this_week"] == 3
     assert stats["this_month"] == 3
-    assert stats["avg_per_week"] == 0.3  # 3 items / 10 weeks
+    assert stats["this_week"] == 3
+    assert stats["avg_per_week"] == 3.0  # 3 items / 1 week (new user)
+    assert stats["avg_weeks"] == 1
+    assert stats["weekly"] == [3]
+
+
+def test_done_stats_older_user(client, alice, db_conn):
+    """User signed up 6 weeks ago — avg uses 4 weeks, sparkline shows 6 weeks."""
+    cur = db_conn.cursor()
+    # Backdate signup to 6 weeks ago
+    cur.execute(
+        "UPDATE users SET created_at = NOW() - INTERVAL '6 weeks' WHERE email = %s",
+        (alice["email"],),
+    )
+    # Insert done items spread across time
+    for i in range(5):
+        cur.execute(
+            "INSERT INTO done_items (id, user_id, text, done_at) "
+            "VALUES (%s, (SELECT id FROM users WHERE email = %s), %s, NOW())",
+            (f"s{i}", alice["email"], f"Item {i}"),
+        )
+
+    r = client.get("/done/stats", headers=auth(alice["token"]))
+    assert r.status_code == 200
+    stats = r.json()
+    assert stats["avg_weeks"] == 4
+    assert len(stats["weekly"]) == 6
+    assert sum(stats["weekly"]) == 5  # all 5 items accounted for
+    assert stats["weekly"][-1] == 5  # all in current week
+    # avg = 5 items in last 4 weeks / 4
+    assert stats["avg_per_week"] == 1.2
+
+
+def test_done_stats_empty(client, alice):
+    """Stats for user with no done items."""
+    r = client.get("/done/stats", headers=auth(alice["token"]))
+    assert r.status_code == 200
+    stats = r.json()
+    assert stats["this_week"] == 0
+    assert stats["this_month"] == 0
+    assert stats["avg_per_week"] == 0.0
+    assert stats["avg_weeks"] == 1
+    assert stats["weekly"] == [0]
 
 
 def test_done_requires_auth(client):

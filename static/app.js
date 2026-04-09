@@ -42,6 +42,11 @@ function persistTheme() {
 
 applyTheme();
 
+// ── Shared view ──────────────────────────────────────────────────────────────
+const SHARED_MATCH = location.pathname.match(/^\/shared\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
+const SHARED_TOKEN = SHARED_MATCH ? SHARED_MATCH[1] : null;
+const IS_SHARED = !!SHARED_TOKEN;
+
 // ── Persistence ───────────────────────────────────────────────────────────────
 const GUEST_KEY        = 'tt_guest_tasks';
 const GUEST_DONE_KEY   = 'tt_guest_done';
@@ -332,6 +337,7 @@ bc.onmessage = e => {
 };
 
 function persist() {
+  if (IS_SHARED) return;
   const token = localStorage.getItem('tt_token');
   if (!token) {
     localStorage.setItem(GUEST_KEY, JSON.stringify(data));
@@ -450,6 +456,9 @@ function showGuestMode() {
   document.getElementById('guest-banner').style.display = 'block';
   document.getElementById('header-signin').style.display = '';
   document.getElementById('header-logout').style.display = 'none';
+  document.getElementById('header-share').style.display = 'none';
+  document.getElementById('theme-bar-sep').style.display = 'none';
+  document.getElementById('theme-bar-sep2').style.display = 'none';
   subscriptionStatus = 'free';
   isComped = false;
   updateBillingUI();
@@ -459,6 +468,10 @@ function showUserMode() {
   document.getElementById('guest-banner').style.display = 'none';
   document.getElementById('header-signin').style.display = 'none';
   document.getElementById('header-logout').style.display = '';
+  document.getElementById('header-share').style.display = '';
+  document.getElementById('theme-bar-sep').style.display = '';
+  document.getElementById('theme-bar-sep2').style.display = '';
+  loadShareState();
   updateBillingUI();
 }
 
@@ -729,6 +742,94 @@ document.getElementById('header-signin').addEventListener('click', () => {
 
 document.getElementById('auth-close').addEventListener('click', hideAuth);
 
+let _shareToken = null;
+let _shareEnabled = false;
+
+async function loadShareState() {
+  const token = localStorage.getItem('tt_token');
+  if (!token) return;
+  try {
+    const r = await fetch('/share/status', { headers: { 'Authorization': `Bearer ${token}` } });
+    if (r.ok) {
+      const s = await r.json();
+      _shareEnabled = s.enabled;
+      _shareToken = s.share_token || null;
+    }
+  } catch {}
+}
+
+function updateSharePopover() {
+  const popover = document.getElementById('share-popover');
+  const toggleBtn = document.getElementById('share-toggle');
+  const linkRow = document.getElementById('share-link-row');
+  const urlInput = document.getElementById('share-url');
+
+  if (_shareEnabled && _shareToken) {
+    toggleBtn.textContent = 'Disable';
+    toggleBtn.classList.add('active');
+    linkRow.style.display = 'flex';
+    urlInput.value = `${location.origin}/shared/${_shareToken}`;
+  } else {
+    toggleBtn.textContent = 'Enable';
+    toggleBtn.classList.remove('active');
+    linkRow.style.display = 'none';
+  }
+}
+
+document.getElementById('header-share').addEventListener('click', () => {
+  const popover = document.getElementById('share-popover');
+  const visible = popover.style.display !== 'none';
+  popover.style.display = visible ? 'none' : 'block';
+  if (!visible) updateSharePopover();
+});
+
+document.getElementById('share-toggle').addEventListener('click', async () => {
+  const token = localStorage.getItem('tt_token');
+  if (!token) return;
+  try {
+    if (!_shareEnabled) {
+      const r = await fetch('/share/enable', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!r.ok) return;
+      const { share_token } = await r.json();
+      _shareToken = share_token;
+      _shareEnabled = true;
+    } else {
+      const r = await fetch('/share/disable', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!r.ok) return;
+      _shareEnabled = false;
+    }
+    updateSharePopover();
+  } catch {}
+});
+
+document.getElementById('share-copy').addEventListener('click', async () => {
+  const urlInput = document.getElementById('share-url');
+  try {
+    await navigator.clipboard.writeText(urlInput.value);
+  } catch {
+    urlInput.select();
+    document.execCommand('copy');
+  }
+  const btn = document.getElementById('share-copy');
+  btn.textContent = 'Copied!';
+  setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+});
+
+// Close popover when clicking outside
+document.addEventListener('click', e => {
+  const popover = document.getElementById('share-popover');
+  const shareBtn = document.getElementById('header-share');
+  if (popover.style.display !== 'none' && !popover.contains(e.target) && e.target !== shareBtn) {
+    popover.style.display = 'none';
+  }
+});
+
 // ── Pomodoro ──────────────────────────────────────────────────────────────────
 let pomodoroActive = localStorage.getItem('tt_pomodoro_active') === 'true';
 let pomodoroTimer  = null;
@@ -765,6 +866,7 @@ pomodoroBtn.addEventListener('click', () => {
 
 function clearPomodoroTimer() {
   if (pomodoroTimer) { clearTimeout(pomodoroTimer); pomodoroTimer = null; }
+  pomodoroBtn.classList.remove('ringing');
 }
 
 let _audioCtx = null;
@@ -861,6 +963,10 @@ function esc(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function linkify(s) {
+  return esc(s).replace(/(https?:\/\/[^\s<>&"]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+}
+
 const taskTotalMs = t => t.sessions.reduce((a,s) => a + ((s.end ?? Date.now()) - s.start), 0);
 
 const taskTodayMs = t => t.sessions
@@ -887,7 +993,7 @@ function allWeekMs() {
 // ── Actions ───────────────────────────────────────────────────────────────────
 let _startingTask = false;
 async function startTask(task) {
-  if (_startingTask) return;
+  if (IS_SHARED || _startingTask) return;
   _startingTask = true;
   try {
   const isRunning = task.sessions.some(s => !s.end);
@@ -918,6 +1024,7 @@ async function startTask(task) {
 }
 
 function deleteTask(id) {
+  if (IS_SHARED) return;
   const task = data.tasks.find(t => t.id === id);
   if (!task) return;
   if (!confirm(`Delete "${taskLabel(task)}" and all its history?`)) return;
@@ -928,6 +1035,7 @@ function deleteTask(id) {
 }
 
 function deleteSession(taskId, sessionStart) {
+  if (IS_SHARED) return;
   const task = data.tasks.find(t => t.id === taskId);
   if (!task) return;
   if (!confirm('Delete this time entry?')) return;
@@ -1277,7 +1385,14 @@ function selectedTagSuggestion() {
 
 function sortRunningFirst(tasks) {
   const running = tasks.filter(t => t.sessions.some(s => !s.end));
-  const rest = tasks.filter(t => !t.sessions.some(s => !s.end));
+  const rest = tasks.filter(t => !t.sessions.some(s => !s.end))
+    .sort((a, b) => {
+      const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+      const ts = todayStart.getTime();
+      const aLatest = Math.max(0, ...a.sessions.filter(s => s.end && s.start >= ts).map(s => s.end));
+      const bLatest = Math.max(0, ...b.sessions.filter(s => s.end && s.start >= ts).map(s => s.end));
+      return bLatest - aLatest;
+    });
   return [...running, ...rest];
 }
 
@@ -1322,6 +1437,7 @@ function tasksForDay(dateStr) {
 }
 
 function deleteTaskDay(taskId, dateStr) {
+  if (IS_SHARED) return;
   const task = data.tasks.find(t => t.id === taskId);
   if (!task) return;
   if (!confirm(`Delete all "${taskLabel(task)}" sessions for ${dateStr}?`)) return;
@@ -1445,18 +1561,21 @@ historyEl.addEventListener('click', async e => {
 
 // ── Later list ────────────────────────────────────────────────────────────────
 function addLaterItem(text) {
+  if (IS_SHARED) return;
   data.later.push({ id: crypto.randomUUID(), text });
   persist();
   render();
 }
 
 function deleteLaterItem(id) {
+  if (IS_SHARED) return;
   data.later = data.later.filter(i => i.id !== id);
   persist();
   render();
 }
 
 function markLaterDone(id) {
+  if (IS_SHARED) return;
   const item = data.later.find(i => i.id === id);
   if (!item) return;
   data.later = data.later.filter(i => i.id !== id);
@@ -1477,6 +1596,7 @@ function markLaterDone(id) {
 }
 
 async function promoteToTask(id) {
+  if (IS_SHARED) return;
   const item = data.later.find(i => i.id === id);
   if (!item) return;
   const task = createOrFindTaskFromQuery(item.text);
@@ -1505,17 +1625,73 @@ function renderLater() {
     ul.innerHTML = items.map(item => {
       const itemHL = nav && nav.type === 'later-item' && nav.id === item.id ? ' nav-highlight' : '';
       return `
-      <li class="later-item${itemHL}" data-id="${item.id}">
-        <span class="later-text">${esc(item.text)}</span>
+      <li class="later-item${itemHL}" data-id="${item.id}" draggable="true">
+        <span class="later-drag" title="Drag to reorder">⠿</span>
+        <span class="later-text">${linkify(item.text)}</span>
         <button class="later-promote" data-id="${item.id}" title="start task">▶</button>
         <button class="later-done" data-id="${item.id}" title="mark done">✓</button>
         <button class="later-del" data-id="${item.id}">✕</button>
       </li>`;
     }).join('');
+    initLaterDragDrop();
   }
 
   const doneLink = document.getElementById('later-done-link');
   if (doneLink) doneLink.style.display = laterVisible ? '' : 'none';
+}
+
+// ── Later drag-and-drop ─────────────────────────────────────────────────────
+function initLaterDragDrop() {
+  const ul = document.getElementById('later-list');
+  let dragId = null;
+
+  ul.querySelectorAll('.later-item').forEach(li => {
+    li.addEventListener('dragstart', e => {
+      dragId = li.dataset.id;
+      li.classList.add('later-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    li.addEventListener('dragend', () => {
+      li.classList.remove('later-dragging');
+      dragId = null;
+      ul.querySelectorAll('.later-drop-above').forEach(el => el.classList.remove('later-drop-above'));
+      ul.querySelectorAll('.later-drop-below').forEach(el => el.classList.remove('later-drop-below'));
+    });
+    li.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const rect = li.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (e.clientY < midY) {
+        li.classList.add('later-drop-above');
+        li.classList.remove('later-drop-below');
+      } else {
+        li.classList.add('later-drop-below');
+        li.classList.remove('later-drop-above');
+      }
+    });
+    li.addEventListener('dragleave', () => {
+      li.classList.remove('later-drop-above', 'later-drop-below');
+    });
+    li.addEventListener('drop', e => {
+      e.preventDefault();
+      if (!dragId || dragId === li.dataset.id) return;
+      // data.later is stored oldest-first, display is reversed (newest first)
+      const items = [...data.later].reverse();
+      const fromIdx = items.findIndex(i => i.id === dragId);
+      const toIdx = items.findIndex(i => i.id === li.dataset.id);
+      if (fromIdx === -1 || toIdx === -1) return;
+      const rect = li.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      const insertBefore = e.clientY < midY;
+      const [moved] = items.splice(fromIdx, 1);
+      const finalIdx = items.findIndex(i => i.id === li.dataset.id);
+      items.splice(insertBefore ? finalIdx : finalIdx + 1, 0, moved);
+      data.later = [...items].reverse(); // back to oldest-first storage
+      persist();
+      render();
+    });
+  });
 }
 
 // ── Hint row ──────────────────────────────────────────────────────────────────
@@ -1659,7 +1835,7 @@ function render() {
       <div class="task-main${isRecent ? ' not-expandable' : ''}">
         <span class="t-shortcut">${i < 9 ? i + 1 : i === 9 ? 0 : ''}</span>
         <button class="t-play${isRunning ? ' pausing' : ''}" data-id="${task.id}" tabindex="-1">${isRunning ? '⏸' : '▶'}</button>
-        <span class="t-name">${esc(task.name)}</span>
+        <span class="t-name">${linkify(task.name)}</span>
         ${tagNameForTask(task) ? `<span class="t-tag">#${esc(tagNameForTask(task))}</span>` : ''}
         <span class="t-dot"></span>
         ${isRecent ? '' : (() => {
@@ -2074,7 +2250,7 @@ document.addEventListener('keydown', async e => {
       if (!laterVisible) { laterVisible = true; localStorage.setItem('tt_later_visible', 'true'); }
       render();
       const laterInput = document.getElementById('later-input');
-      laterInput.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      laterInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
       laterInput.focus();
       return;
     }
@@ -2113,7 +2289,7 @@ document.addEventListener('keydown', async e => {
     e.preventDefault();
     if (!laterVisible) { laterVisible = true; localStorage.setItem('tt_later_visible', 'true'); render(); }
     const laterInput = document.getElementById('later-input');
-    laterInput.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    laterInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
     laterInput.focus();
     return;
   }
@@ -2208,18 +2384,31 @@ document.getElementById('about-backdrop').addEventListener('click', hideAbout);
 document.getElementById('theme-toggle').addEventListener('click', cycleTheme);
 
 // ── Done page ────────────────────────────────────────────────────────────────
+function buildSparkline(weekly) {
+  if (!weekly || weekly.length === 0) return '';
+  const max = Math.max(...weekly, 1);
+  const w = 120, h = 32, pad = 2;
+  const step = weekly.length > 1 ? (w - pad * 2) / (weekly.length - 1) : 0;
+  const points = weekly.map((v, i) => {
+    const x = pad + i * step;
+    const y = h - pad - ((v / max) * (h - pad * 2));
+    return `${x},${y}`;
+  });
+  return `<svg class="done-sparkline" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    <polyline fill="none" stroke="var(--dimmer)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" points="${points.join(' ')}"/>
+  </svg>`;
+}
+
 function isDonePage() { return location.pathname === '/done-list'; }
 
 async function initDonePage() {
   document.getElementById('app').innerHTML = `
-    <div class="theme-bar">
+    <div class="theme-bar theme-bar-sub">
+      <a href="/" class="done-back">← Back</a>
       <button class="header-theme" id="theme-toggle-done" title="Toggle theme"></button>
     </div>
     <div class="done-page">
-      <div class="done-header">
-        <a href="/" class="done-back">← Back</a>
-        <h1 class="done-title">Done</h1>
-      </div>
+      <h1 class="done-title">Done</h1>
       <div class="done-stats" id="done-stats"></div>
       <ul class="done-list" id="done-list"></ul>
       <div class="done-loading" id="done-loading" style="display:none">Loading…</div>
@@ -2248,17 +2437,17 @@ async function initDonePage() {
       weekStart.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1));
       weekStart.setHours(0, 0, 0, 0);
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const tenWeeksAgo = new Date(now.getTime() - 10 * 7 * 24 * 60 * 60 * 1000);
+      const fourWeeksAgo = new Date(now.getTime() - 4 * 7 * 24 * 60 * 60 * 1000);
 
       const thisWeek = done.filter(d => new Date(d.done_at) >= weekStart).length;
       const thisMonth = done.filter(d => new Date(d.done_at) >= monthStart).length;
-      const last10w = done.filter(d => new Date(d.done_at) >= tenWeeksAgo).length;
-      const avg = Math.round(last10w / 10 * 10) / 10;
+      const last4w = done.filter(d => new Date(d.done_at) >= fourWeeksAgo).length;
+      const avg = Math.round(last4w / 4 * 10) / 10;
 
       statsEl.innerHTML = `
-        <div class="done-stat"><span class="done-stat-value">${avg}</span><span class="done-stat-label">avg / week<span class="done-stat-sub">(last 10 weeks)</span></span></div>
+        <div class="done-stat"><span class="done-stat-value">${thisMonth}</span><span class="done-stat-label">this month</span></div>
         <div class="done-stat"><span class="done-stat-value">${thisWeek}</span><span class="done-stat-label">this week</span></div>
-        <div class="done-stat"><span class="done-stat-value">${thisMonth}</span><span class="done-stat-label">this month</span></div>`;
+        <div class="done-stat"><span class="done-stat-value">${avg}</span><span class="done-stat-label">avg / week<span class="done-stat-sub">(last 4 weeks)</span></span></div>`;
       return;
     }
     try {
@@ -2266,9 +2455,10 @@ async function initDonePage() {
       if (!r.ok) return;
       const s = await r.json();
       statsEl.innerHTML = `
-        <div class="done-stat"><span class="done-stat-value">${s.avg_per_week}</span><span class="done-stat-label">avg / week<span class="done-stat-sub">(last 10 weeks)</span></span></div>
+        <div class="done-stat"><span class="done-stat-value">${s.this_month}</span><span class="done-stat-label">this month</span></div>
         <div class="done-stat"><span class="done-stat-value">${s.this_week}</span><span class="done-stat-label">this week</span></div>
-        <div class="done-stat"><span class="done-stat-value">${s.this_month}</span><span class="done-stat-label">this month</span></div>`;
+        <div class="done-stat"><span class="done-stat-value">${s.avg_per_week}</span><span class="done-stat-label">avg / week<span class="done-stat-sub">(last ${s.avg_weeks} week${s.avg_weeks === 1 ? '' : 's'})</span></span></div>
+        <div class="done-stat done-stat-spark">${buildSparkline(s.weekly)}</div>`;
     } catch {}
   }
 
@@ -2277,7 +2467,7 @@ async function initDonePage() {
     ul.innerHTML = allItems.map(item => {
       const d = new Date(item.done_at);
       const dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-      return `<li class="done-item"><span class="done-item-check">✓</span><span class="done-item-text">${esc(item.text)}</span><span class="done-item-date">${dateStr}</span></li>`;
+      return `<li class="done-item"><span class="done-item-check">✓</span><span class="done-item-text">${linkify(item.text)}</span><span class="done-item-date">${dateStr}</span></li>`;
     }).join('');
   }
 
@@ -2321,12 +2511,300 @@ async function initDonePage() {
   await Promise.all([loadStats(), loadMore()]);
 }
 
+// ── Report page ──────────────────────────────────────────────────────────────
+
+function isReportPage() { return location.pathname === '/report'; }
+
+function fmtHM(ms) {
+  const totalMin = Math.floor(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h === 0) return `${m}m`;
+  return `${h}h ${m}m`;
+}
+
+async function initReportPage() {
+  document.getElementById('app').innerHTML = `
+    <div class="theme-bar theme-bar-sub">
+      <a href="/" class="done-back">← Back</a>
+      <button class="header-theme" id="theme-toggle-report" title="Toggle theme"></button>
+    </div>
+    <div class="report-page">
+      <h1 class="done-title">Monthly Report</h1>
+      <div class="report-content" id="report-content">
+        <div class="done-loading">Loading…</div>
+      </div>
+    </div>`;
+
+  const btn = document.getElementById('theme-toggle-report');
+  const saved = localStorage.getItem(THEME_KEY) || 'light';
+  btn.innerHTML = THEME_ICONS[saved];
+  btn.addEventListener('click', () => { cycleTheme(); btn.innerHTML = THEME_ICONS[localStorage.getItem(THEME_KEY) || 'light']; });
+
+  const token = localStorage.getItem('tt_token');
+  const contentEl = document.getElementById('report-content');
+
+  if (!token) {
+    // Guest mode: compute from localStorage
+    const guestData = JSON.parse(localStorage.getItem(GUEST_KEY) || '{"tasks":[]}');
+    const thirtyDaysAgo = Date.now() - 30 * 86400 * 1000;
+    const tasks = guestData.tasks
+      .map(t => {
+        const sessions = (t.sessions || []).filter(s => s.end && s.start >= thirtyDaysAgo);
+        const total_ms = sessions.reduce((a, s) => a + (s.end - s.start), 0);
+        return { name: t.name, total_ms, session_count: sessions.length };
+      })
+      .filter(t => t.total_ms > 0)
+      .sort((a, b) => b.total_ms - a.total_ms);
+    const total_ms = tasks.reduce((a, t) => a + t.total_ms, 0);
+    const period_start = new Date(thirtyDaysAgo).toISOString().slice(0, 10);
+    const period_end = new Date().toISOString().slice(0, 10);
+    renderReport(contentEl, { tasks, total_ms, period_start, period_end });
+    return;
+  }
+
+  try {
+    const r = await fetch('/report/monthly', { headers: { 'Authorization': `Bearer ${token}` } });
+    if (!r.ok) { contentEl.innerHTML = '<div class="done-empty">Could not load report.</div>'; return; }
+    const data = await r.json();
+    renderReport(contentEl, data);
+  } catch {
+    contentEl.innerHTML = '<div class="done-empty">Could not load report.</div>';
+  }
+}
+
+const REPORT_COLORS = [
+  '#4f86f7', '#f7694f', '#50c878', '#f7b84f', '#a66ff7',
+  '#f74f9a', '#4fc8f7', '#f7d94f', '#6ff7a6', '#f74f4f',
+  '#7b68ee', '#ff8c42', '#3cb371', '#e06cf7', '#42b0ff',
+];
+
+function renderReport(el, data) {
+  if (data.tasks.length === 0) {
+    el.innerHTML = '<div class="done-empty">No tracked time in the last 30 days.</div>';
+    return;
+  }
+
+  const maxMs = data.tasks[0].total_ms;
+
+  const rows = data.tasks.map((t, i) => {
+    const pct = Math.max(2, Math.round(t.total_ms / maxMs * 100));
+    const color = REPORT_COLORS[i % REPORT_COLORS.length];
+    return `
+      <div class="report-row">
+        <div class="report-task-info">
+          <span class="report-task-name">${esc(t.name)}</span>
+          <span class="report-task-meta">${t.session_count} session${t.session_count === 1 ? '' : 's'}</span>
+        </div>
+        <div class="report-bar-wrap">
+          <div class="report-bar" style="width:${pct}%;background:${color}"></div>
+        </div>
+        <span class="report-task-time">${fmtHM(t.total_ms)}</span>
+      </div>`;
+  }).join('');
+
+  const fmtDate = iso => {
+    const d = new Date(iso + 'T12:00:00');
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
+  const periodLabel = data.period_start && data.period_end
+    ? `${fmtDate(data.period_start)} – ${fmtDate(data.period_end)}`
+    : 'Last 30 days';
+
+  el.innerHTML = `
+    <div class="report-period">${periodLabel}</div>
+    <div class="report-total">
+      <span class="report-total-label">Total</span>
+      <span class="report-total-time">${fmtHM(data.total_ms)}</span>
+    </div>
+    <div class="report-rows">${rows}</div>`;
+}
+
+// ── Shared view ─────────────────────────────────────────────────────────────
+
+function sharedSubPath() {
+  return location.pathname.replace(`/shared/${SHARED_TOKEN}`, '') || '/';
+}
+
+function sharedCTABanner() {
+  return `<div class="shared-cta">
+    <span>You're viewing a shared profile.</span>
+    <a href="/" class="shared-cta-link">Try Doing It — it's free</a>
+  </div>`;
+}
+
+async function fetchSharedData() {
+  try {
+    const r = await fetch(`/shared/${SHARED_TOKEN}/data`);
+    if (!r.ok) return false;
+    data = await r.json();
+    ensureDataShape();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function initSharedView() {
+  document.body.classList.add('shared-view');
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('guest-banner').style.display = 'none';
+
+  const ok = await fetchSharedData();
+  if (!ok) {
+    document.getElementById('app').innerHTML = sharedCTABanner() +
+      '<div class="done-page"><div class="done-empty">Shared profile not found.</div></div>';
+    return;
+  }
+
+  if (data.theme) {
+    localStorage.setItem(THEME_KEY, data.theme);
+    applyTheme();
+  }
+
+  // Insert CTA before the app content
+  document.getElementById('app').insertAdjacentHTML('afterbegin', sharedCTABanner());
+
+  // Update links to point to shared versions
+  const reportLink = document.getElementById('report-link');
+  if (reportLink) reportLink.href = `/shared/${SHARED_TOKEN}/report`;
+  const doneLink = document.getElementById('later-done-link');
+  if (doneLink) doneLink.href = `/shared/${SHARED_TOKEN}/done-list`;
+
+  render();
+  ensureTick();
+
+  // Poll for live updates
+  setInterval(async () => {
+    if (await fetchSharedData()) { render(); }
+  }, 5000);
+}
+
+async function initSharedDonePage() {
+  document.body.classList.add('shared-view');
+  document.getElementById('app').innerHTML = sharedCTABanner() + `
+    <div class="theme-bar theme-bar-sub">
+      <a href="/shared/${SHARED_TOKEN}" class="done-back">\u2190 Back</a>
+      <button class="header-theme" id="theme-toggle-done" title="Toggle theme"></button>
+    </div>
+    <div class="done-page">
+      <h1 class="done-title">Done</h1>
+      <div class="done-stats" id="done-stats"></div>
+      <ul class="done-list" id="done-list"></ul>
+      <div class="done-loading" id="done-loading" style="display:none">Loading\u2026</div>
+      <div class="done-empty" id="done-empty" style="display:none">No items marked as done yet.</div>
+    </div>`;
+
+  const btn = document.getElementById('theme-toggle-done');
+  const saved = localStorage.getItem(THEME_KEY) || 'light';
+  btn.innerHTML = THEME_ICONS[saved];
+  btn.addEventListener('click', () => { cycleTheme(); btn.innerHTML = THEME_ICONS[localStorage.getItem(THEME_KEY) || 'light']; });
+
+  let allItems = [];
+  let total = 0;
+  let offset = 0;
+  const PAGE = 50;
+
+  async function loadStats() {
+    const statsEl = document.getElementById('done-stats');
+    try {
+      const r = await fetch(`/shared/${SHARED_TOKEN}/done/stats`);
+      if (!r.ok) return;
+      const s = await r.json();
+      statsEl.innerHTML = `
+        <div class="done-stat"><span class="done-stat-value">${s.this_month}</span><span class="done-stat-label">this month</span></div>
+        <div class="done-stat"><span class="done-stat-value">${s.this_week}</span><span class="done-stat-label">this week</span></div>
+        <div class="done-stat"><span class="done-stat-value">${s.avg_per_week}</span><span class="done-stat-label">avg / week<span class="done-stat-sub">(last ${s.avg_weeks} week${s.avg_weeks === 1 ? '' : 's'})</span></span></div>
+        <div class="done-stat done-stat-spark">${buildSparkline(s.weekly)}</div>`;
+    } catch {}
+  }
+
+  function renderItems() {
+    const ul = document.getElementById('done-list');
+    ul.innerHTML = allItems.map(item => {
+      const d = new Date(item.done_at);
+      const dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      return `<li class="done-item"><span class="done-item-check">\u2713</span><span class="done-item-text">${linkify(item.text)}</span><span class="done-item-date">${dateStr}</span></li>`;
+    }).join('');
+  }
+
+  async function loadMore() {
+    const loadingEl = document.getElementById('done-loading');
+    const emptyEl = document.getElementById('done-empty');
+    loadingEl.style.display = 'block';
+    try {
+      const r = await fetch(`/shared/${SHARED_TOKEN}/done?offset=${offset}&limit=${PAGE}`);
+      if (!r.ok) { loadingEl.style.display = 'none'; return; }
+      const body = await r.json();
+      total = body.total;
+      allItems = allItems.concat(body.items);
+      offset += body.items.length;
+    } catch { loadingEl.style.display = 'none'; return; }
+    loadingEl.style.display = 'none';
+    if (allItems.length === 0) { emptyEl.style.display = 'block'; return; }
+    renderItems();
+  }
+
+  window.addEventListener('scroll', () => {
+    if (sharedSubPath() !== '/done-list') return;
+    if (offset >= total) return;
+    if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 200) {
+      loadMore();
+    }
+  });
+
+  await Promise.all([loadStats(), loadMore()]);
+}
+
+async function initSharedReportPage() {
+  document.body.classList.add('shared-view');
+  document.getElementById('app').innerHTML = sharedCTABanner() + `
+    <div class="theme-bar theme-bar-sub">
+      <a href="/shared/${SHARED_TOKEN}" class="done-back">\u2190 Back</a>
+      <button class="header-theme" id="theme-toggle-report" title="Toggle theme"></button>
+    </div>
+    <div class="report-page">
+      <h1 class="done-title">Monthly Report</h1>
+      <div class="report-content" id="report-content">
+        <div class="done-loading">Loading\u2026</div>
+      </div>
+    </div>`;
+
+  const btn = document.getElementById('theme-toggle-report');
+  const saved = localStorage.getItem(THEME_KEY) || 'light';
+  btn.innerHTML = THEME_ICONS[saved];
+  btn.addEventListener('click', () => { cycleTheme(); btn.innerHTML = THEME_ICONS[localStorage.getItem(THEME_KEY) || 'light']; });
+
+  const contentEl = document.getElementById('report-content');
+  try {
+    const r = await fetch(`/shared/${SHARED_TOKEN}/report/monthly`);
+    if (!r.ok) { contentEl.innerHTML = '<div class="done-empty">Could not load report.</div>'; return; }
+    const data = await r.json();
+    renderReport(contentEl, data);
+  } catch {
+    contentEl.innerHTML = '<div class="done-empty">Could not load report.</div>';
+  }
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 window.onGoogleLibraryLoad = initGoogleButton; // fires when GIS script finishes loading
 loadGoogleAuth();                               // fetches client_id from backend
-if (isDonePage()) {
+if (IS_SHARED) {
+  applyTheme();
+  const sub = sharedSubPath();
+  if (sub === '/done-list') {
+    initSharedDonePage();
+  } else if (sub === '/report') {
+    initSharedReportPage();
+  } else {
+    initSharedView();
+  }
+} else if (isDonePage()) {
   applyTheme();
   initDonePage();
+} else if (isReportPage()) {
+  applyTheme();
+  initReportPage();
 } else {
   load();
 }

@@ -96,7 +96,22 @@
 <div id="app">
 
   <div class="theme-bar">
+    <button class="header-share-live" id="header-share" style="display:none" title="Share a live URL so others can follow your progress in real time">share live view</button>
+    <span class="header-sep theme-bar-sep" id="theme-bar-sep" style="display:none">/</span>
+    <button class="header-logout-btn" id="header-logout" style="display:none">logout</button>
+    <span class="header-sep theme-bar-sep" id="theme-bar-sep2" style="display:none">/</span>
+    <button class="header-signin-btn" id="header-signin" style="display:none">sign in</button>
     <button class="header-theme" id="theme-toggle" title="Toggle theme"></button>
+  </div>
+  <div class="share-popover" id="share-popover" style="display:none">
+    <div class="share-popover-row">
+      <span class="share-popover-label">Live sharing</span>
+      <button class="share-popover-toggle" id="share-toggle">Enable</button>
+    </div>
+    <div class="share-popover-link-row" id="share-link-row" style="display:none">
+      <input class="share-popover-url" id="share-url" readonly>
+      <button class="share-popover-copy" id="share-copy">Copy</button>
+    </div>
   </div>
 
   <div class="header">
@@ -108,8 +123,6 @@
     <button class="header-pomodoro" id="header-pomodoro" title="Toggle pomodoro">🍅</button>
     <input class="header-pomodoro-mins" id="header-pomodoro-mins" type="number" min="1" max="60" value="25" title="Pomodoro minutes">
     <span class="header-sep">/</span>
-    <button class="header-logout" id="header-signin" style="display:none">sign in</button>
-    <button class="header-logout" id="header-logout" style="display:none">logout</button>
     <button class="header-logout header-upgrade" id="header-upgrade" style="display:none">upgrade: it’s $1.49 a month…</button>
     <button class="header-logout header-manage" id="header-manage" style="display:none">pro ✓</button>
     <span class="header-vip" id="header-vip" style="display:none">♛ vip</span>
@@ -145,12 +158,13 @@
   <ul id="task-list"></ul>
 
   <div id="history"></div>
+  <a id="report-link" class="report-link" href="/report">Monthly report →</a>
 
   <section id="later">
     <div id="later-header">later</div>
     <input id="later-input" type="text" placeholder="something for later… (Shift+N)" autocomplete="off">
     <ul id="later-list"></ul>
-    <a id="later-done-link" href="/done-list">See all Done</a>
+    <a id="later-done-link" href="/done-list">See all done →</a>
   </section>
 
 </div>

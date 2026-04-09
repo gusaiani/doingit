@@ -36,6 +36,7 @@ def init_test_db():
         """)
         cur.execute("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL")
         cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS theme TEXT")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS share_token TEXT UNIQUE")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS user_data (
                 user_id     INTEGER PRIMARY KEY REFERENCES users(id),

@@ -139,11 +139,19 @@
   </div>
 
   <div class="search-row">
-    <span class="search-prompt"><img src="/static/beaver-small.png" alt="" class="beaver-mascot"></span>
-    <input id="search" type="text" placeholder="task name… (n)" autocomplete="off" spellcheck="false">
+    <span class="search-prompt">
+      <img src="/static/beaver-small.png" alt="" class="beaver-mascot" decoding="async">
+      <div id="tag-tip" class="tag-tip" role="dialog" aria-live="polite" aria-hidden="true">
+        <div class="tag-tip-inner">
+          <button type="button" class="tag-tip-close" aria-label="Dismiss">×</button>
+          <p class="tag-tip-text"></p>
+        </div>
+      </div>
+    </span>
+    <input id="search" type="text" placeholder="(n) task name… #tag" autocomplete="off" spellcheck="false">
     <span id="search-create-hint"><span class="hint-return">↵</span> new</span>
   </div>
-  <div id="project-autocomplete" class="project-autocomplete" style="display:none"></div>
+  <div id="tag-autocomplete" class="tag-autocomplete" style="display:none"></div>
   <div class="search-hint" id="search-hint"></div>
 
   <div class="total-row" id="total-row" style="display:none"></div>
@@ -190,7 +198,7 @@
     <p class="about-tagline">From to-do to done, tracked.</p>
     <div class="about-body">
       <p>Type a task name, press Enter, and the clock starts. Press Escape to stop. That's it.</p>
-      <p>No projects, no tags, no settings. Just a text box and a timer — like Notational Velocity for your workday.</p>
+      <p>No folders, no clutter, no settings. Just a text box and a timer — like Notational Velocity for your workday. Use <code>#tag</code> on a task when you want a label.</p>
       <p class="about-section-label">Good for</p>
       <ul>
         <li>Freelancers tracking billable hours</li>
@@ -200,6 +208,7 @@
       <p class="about-section-label">Features</p>
       <ul>
         <li>Instant search — find or create a task in one keystroke</li>
+        <li>Optional <code>#tags</code> on tasks (autocomplete as you type)</li>
         <li>Pomodoro timer built in</li>
         <li>Full keyboard navigation (j/k, Enter, Escape)</li>
         <li>Daily &amp; weekly history</li>

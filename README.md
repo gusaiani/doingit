@@ -42,6 +42,8 @@ pytest
 
 Tests use transaction-per-test rollback for fast, isolated runs against a real Postgres instance. No mocking of the database layer.
 
+End-to-end checks for the static UI live under `tests/e2e/` (Playwright). With Node 18+, from the repo root: `npm install` then `npx playwright test tests/e2e/task-crud.e2e.mjs` (or another file in that folder).
+
 CI runs automatically on every push and pull request via GitHub Actions.
 
 ## Deploying to Fly.io
@@ -173,8 +175,13 @@ Then open `http://localhost:8000/?token=<token>` manually to reach the reset for
 | `↑` `↓` | Navigate the task list |
 | `Tab` | Expand/collapse today's session log for the selected task |
 | `Esc` | Clear the search |
+| `#` | Optional tag: type `task name` then `#tagname` (space optional). Autocomplete appears after `#`. |
 
 You can also click any task row to start/stop it, and hover to reveal the `✕` delete button.
+
+**Tags (discovery)**
+
+The search placeholder shows an example with `#`. While the search field is focused, the hint row shows keyboard shortcuts for the search field. After you create **three new tasks without a tag**, the beaver mascot may show a short tip (at most **twice** per browser)—e.g. *“add a tag like this: task #work”*; dismiss with **×** or by clicking outside the mascot area. As soon as you **create a new task that includes a tag** (`#something`), the tip closes and will not appear again — same as if you had dismissed it twice. Dismissals are stored in `localStorage` under `doingit_tag_tip_dismissals` (older builds used `doingit_project_tag_tip_dismissals`; the app migrates that value once on read).
 
 Only one task runs at a time — starting a new one automatically stops the current one.
 
@@ -251,7 +258,7 @@ Later (to-do) items can be reordered by dragging. Hover over an item to reveal t
 
 All task data is stored per-user in a Postgres database. Locally this is the `tt` database on your Postgres.app instance. In production it's the Fly.io Postgres cluster attached to the app.
 
-Tasks, sessions, and the “later” list are normalized into SQL tables. **`GET /data` returns them from those tables.** Projects and each task’s `projectId` are not separate tables; they are stored inside the `user_data.tasks_json` blob (the same JSON the client sends on `POST /data`). On read, the server merges that blob so **`projects` and `projectId` round-trip** with the rest of the payload—reloads and new devices see the same project tags as long as the client has synced at least once after creating projects.
+Tasks, sessions, and the “later” list are normalized into SQL tables. **`GET /data` returns them from those tables.** Task tags use the UI word **tag**; in stored JSON they still live under **`projects`** (list of tag definitions) and **`projectId`** on each task (same payload the client sends on `POST /data`). On read, the server merges that blob so tags **round-trip** with the rest of the payload—reloads and new devices see the same tags after sync.
 
 ## Files
 

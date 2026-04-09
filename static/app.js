@@ -51,11 +51,17 @@ const IS_SHARED = !!SHARED_TOKEN;
 const GUEST_KEY        = 'tt_guest_tasks';
 const GUEST_DONE_KEY   = 'tt_guest_done';
 const GUEST_TRIAL_KEY  = 'tt_guest_trial_start';
+const TAG_TIP_DISMISS_KEY = 'doingit_tag_tip_dismissals';
+const TAG_TIP_DISMISS_KEY_LEGACY = 'doingit_project_tag_tip_dismissals';
+const TAG_TIP_THRESHOLD   = 3;
+const TAG_TIP_MAX_SHOWS   = 2;
 const FREE_LIMIT       = 5;
-const MAX_PROJECT_SUGGESTIONS = 6;
+const MAX_TAG_SUGGESTIONS = 6;
 let data = { tasks: [], later: [], projects: [] };
+/** While `confirm()` is open, blur has no meaningful relatedTarget — skip clearing the search draft. */
+let suppressSearchBlurClear = false;
 
-function normalizeProjectName(name = '') {
+function normalizeTagName(name = '') {
   return name.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
@@ -66,103 +72,204 @@ function ensureDataShape() {
   if (!Array.isArray(data.projects)) data.projects = [];
 
   const byNormalized = new Map();
-  data.projects.forEach(project => {
-    if (!project || typeof project !== 'object') return;
-    const normalizedName = normalizeProjectName(project.normalizedName || project.name || '');
+  data.projects.forEach(tagDef => {
+    if (!tagDef || typeof tagDef !== 'object') return;
+    const normalizedName = normalizeTagName(tagDef.normalizedName || tagDef.name || '');
     if (!normalizedName || byNormalized.has(normalizedName)) return;
     byNormalized.set(normalizedName, {
-      id: project.id || crypto.randomUUID(),
-      name: normalizeProjectName(project.name || normalizedName),
+      id: tagDef.id || crypto.randomUUID(),
+      name: normalizeTagName(tagDef.name || normalizedName),
       normalizedName,
-      createdAt: project.createdAt || Date.now(),
+      createdAt: tagDef.createdAt || Date.now(),
     });
   });
   data.projects = Array.from(byNormalized.values());
 
-  const validProjectIds = new Set(data.projects.map(project => project.id));
+  const validTagIds = new Set(data.projects.map(t => t.id));
   data.tasks.forEach(task => {
     if (!Array.isArray(task.sessions)) task.sessions = [];
-    if (!task.projectId || !validProjectIds.has(task.projectId)) task.projectId = null;
+    if (!task.projectId || !validTagIds.has(task.projectId)) task.projectId = null;
   });
 }
 
-function getProjectById(projectId) {
+function getTagById(projectId) {
   if (!projectId) return null;
-  return data.projects.find(project => project.id === projectId) || null;
+  return data.projects.find(t => t.id === projectId) || null;
 }
 
-function projectNameForTask(task) {
-  return getProjectById(task.projectId)?.name || null;
+function tagNameForTask(task) {
+  return getTagById(task.projectId)?.name || null;
 }
 
 function taskLabel(task) {
-  const project = projectNameForTask(task);
-  return project ? `${task.name} #${project}` : task.name;
+  const tag = tagNameForTask(task);
+  return tag ? `${task.name} #${tag}` : task.name;
 }
 
-function upsertProjectByName(rawName) {
-  const normalizedName = normalizeProjectName(rawName);
+function upsertTagByName(rawName) {
+  const normalizedName = normalizeTagName(rawName);
   if (!normalizedName) return null;
-  const existing = data.projects.find(project => project.normalizedName === normalizedName);
+  const existing = data.projects.find(t => t.normalizedName === normalizedName);
   if (existing) return existing.id;
-  const project = {
+  const tagDef = {
     id: crypto.randomUUID(),
     name: normalizedName,
     normalizedName,
     createdAt: Date.now(),
   };
-  data.projects.push(project);
-  return project.id;
+  data.projects.push(tagDef);
+  return tagDef.id;
 }
 
 function linkedTasksCount(projectId) {
   return data.tasks.filter(task => task.projectId === projectId).length;
 }
 
-function deleteProjectById(projectId) {
-  const project = getProjectById(projectId);
-  if (!project) return;
+function deleteTagById(projectId) {
+  const tag = getTagById(projectId);
+  if (!tag) return;
   const affected = linkedTasksCount(projectId);
   const suffix = affected
-    ? ` ${affected} task${affected === 1 ? '' : 's'} will keep their history without project.`
+    ? ` ${affected} task${affected === 1 ? '' : 's'} will keep their history without a tag.`
     : '';
-  if (!confirm(`Delete project "#${project.name}"?${suffix}`)) return;
+  const searchInput = document.getElementById('search');
+  const searchSnapshot = searchInput ? searchInput.value : '';
+
+  suppressSearchBlurClear = true;
+  let confirmed = false;
+  try {
+    confirmed = confirm(`Delete tag "#${tag.name}"?${suffix}`);
+  } finally {
+    suppressSearchBlurClear = false;
+  }
+
+  if (!confirmed) {
+    if (searchInput) {
+      searchInput.value = searchSnapshot;
+      searchInput.focus();
+    }
+    return;
+  }
+
   data.projects = data.projects.filter(item => item.id !== projectId);
   data.tasks.forEach(task => {
     if (task.projectId === projectId) task.projectId = null;
   });
+
+  if (searchInput) {
+    const ctx = parseTagAutocompleteContext(searchSnapshot);
+    // Back to “only task name”: drop the #… fragment after removing a tag from the list.
+    searchInput.value = ctx ? (ctx.taskPart || '') : searchSnapshot;
+    searchInput.focus();
+  }
   persist();
 }
 
 function parseTaskInput(rawInput) {
   const input = (rawInput || '').trim();
-  if (!input) return { taskName: '', projectName: null, hasProject: false };
-  const match = input.match(/^(.*?)\s+#(.*)$/);
-  if (!match) return { taskName: input, projectName: null, hasProject: false };
+  if (!input) return { taskName: '', tagName: null, hasTag: false };
+  const match = input.match(/^(.*?)\s*#(.*)$/);
+  if (!match) return { taskName: input, tagName: null, hasTag: false };
   const taskName = match[1].trim();
-  const projectName = normalizeProjectName(match[2] || '');
-  if (!projectName) return { taskName, projectName: null, hasProject: false };
+  const tagName = normalizeTagName(match[2] || '');
+  if (!tagName) return { taskName, tagName: null, hasTag: false };
   return {
     taskName,
-    projectName,
-    hasProject: true,
+    tagName,
+    hasTag: true,
   };
 }
 
-function parseProjectAutocompleteContext(rawInput) {
+function parseTagAutocompleteContext(rawInput) {
   const input = rawInput || '';
-  const match = input.match(/^(.*?)\s+#(.*)$/);
+  const match = input.match(/^(.*?)\s*#(.*)$/);
   if (!match) return null;
   return {
     taskPart: match[1].trim(),
-    typedProject: normalizeProjectName(match[2] || ''),
+    typedTag: normalizeTagName(match[2] || ''),
   };
+}
+
+let untaggedCreatesSinceLastTip = 0;
+let tagTipOpen = false;
+let tagTipOutsideBound = false;
+
+function tagTipDismissCount() {
+  let raw = localStorage.getItem(TAG_TIP_DISMISS_KEY);
+  if (raw == null) {
+    raw = localStorage.getItem(TAG_TIP_DISMISS_KEY_LEGACY);
+    if (raw != null) {
+      localStorage.setItem(TAG_TIP_DISMISS_KEY, raw);
+      localStorage.removeItem(TAG_TIP_DISMISS_KEY_LEGACY);
+    }
+  }
+  const n = parseInt(raw || '0', 10);
+  return Number.isFinite(n) ? Math.min(TAG_TIP_MAX_SHOWS, Math.max(0, n)) : 0;
+}
+
+function noteUntaggedTaskCreated() {
+  if (tagTipDismissCount() >= TAG_TIP_MAX_SHOWS) return;
+  if (tagTipOpen) return;
+  untaggedCreatesSinceLastTip += 1;
+  if (untaggedCreatesSinceLastTip >= TAG_TIP_THRESHOLD) {
+    tagTipOpen = true;
+    untaggedCreatesSinceLastTip = 0;
+  }
+}
+
+function tagTipOutsideHandler(e) {
+  const tip = document.getElementById('tag-tip');
+  const prompt = document.querySelector('.search-prompt');
+  if (tip?.contains(e.target) || prompt?.contains(e.target)) return;
+  dismissTagTip();
+}
+
+function dismissTagTip() {
+  if (!tagTipOpen) return;
+  tagTipOpen = false;
+  const next = tagTipDismissCount() + 1;
+  localStorage.setItem(TAG_TIP_DISMISS_KEY, String(next));
+  syncTagTip();
+}
+
+/** User created a task with a #tag — hide tip and never show it again. */
+function suppressTagTipUserLearned() {
+  tagTipOpen = false;
+  untaggedCreatesSinceLastTip = 0;
+  localStorage.setItem(TAG_TIP_DISMISS_KEY, String(TAG_TIP_MAX_SHOWS));
+  syncTagTip();
+}
+
+function syncTagTip() {
+  const el = document.getElementById('tag-tip');
+  if (!el) return;
+  const dismissals = tagTipDismissCount();
+  const show = tagTipOpen && dismissals < TAG_TIP_MAX_SHOWS;
+  const textEl = el.querySelector('.tag-tip-text');
+  if (show) {
+    el.classList.add('visible');
+    el.setAttribute('aria-hidden', 'false');
+    if (textEl) {
+      textEl.textContent = 'add a tag like this: task #work';
+    }
+    if (!tagTipOutsideBound) {
+      document.addEventListener('mousedown', tagTipOutsideHandler, true);
+      tagTipOutsideBound = true;
+    }
+  } else {
+    el.classList.remove('visible');
+    el.setAttribute('aria-hidden', 'true');
+    if (tagTipOutsideBound) {
+      document.removeEventListener('mousedown', tagTipOutsideHandler, true);
+      tagTipOutsideBound = false;
+    }
+  }
 }
 
 function createOrFindTaskFromQuery(rawInput) {
   const parsed = parseTaskInput(rawInput);
   if (!parsed.taskName) return null;
-  const projectId = parsed.hasProject ? upsertProjectByName(parsed.projectName) : null;
+  const projectId = parsed.hasTag ? upsertTagByName(parsed.tagName) : null;
   const existing = data.tasks.find(task =>
     task.name.toLowerCase() === parsed.taskName.toLowerCase() &&
     (task.projectId || null) === (projectId || null)
@@ -170,6 +277,8 @@ function createOrFindTaskFromQuery(rawInput) {
   if (existing) return existing;
   const task = { id: crypto.randomUUID(), name: parsed.taskName, sessions: [], projectId };
   data.tasks.unshift(task);
+  if (!projectId) noteUntaggedTaskCreated();
+  else suppressTagTipUserLearned();
   return task;
 }
 
@@ -1166,9 +1275,9 @@ const totalRow   = document.getElementById('total-row');
 const hdRunning  = document.getElementById('header-running');
 const hdDate     = document.getElementById('header-date');
 const historyEl  = document.getElementById('history');
-const projectAutocompleteEl = document.getElementById('project-autocomplete');
-let projectSuggestions = [];
-let projectSelIdx = -1;
+const tagAutocompleteEl = document.getElementById('tag-autocomplete');
+let tagSuggestions = [];
+let tagSelIdx = -1;
 
 hdDate.textContent = new Date().toLocaleDateString('en-US', {
   weekday: 'short', month: 'short', day: 'numeric'
@@ -1189,89 +1298,89 @@ function filtered() {
       .slice(0, 5 - todayTasks.length);
     return sortRunningFirst([...todayTasks, ...recent]);
   }
-  const projectContext = parseProjectAutocompleteContext(query());
-  if (projectContext) {
+  const tagContext = parseTagAutocompleteContext(query());
+  if (tagContext) {
     return data.tasks.filter(task => {
-      const taskNameMatch = task.name.toLowerCase().includes(projectContext.taskPart.toLowerCase());
-      const taskProject = (projectNameForTask(task) || '').toLowerCase();
-      const projectMatch = !projectContext.typedProject || taskProject.startsWith(projectContext.typedProject);
-      return taskNameMatch && projectMatch;
+      const taskNameMatch = task.name.toLowerCase().includes(tagContext.taskPart.toLowerCase());
+      const taskTag = (tagNameForTask(task) || '').toLowerCase();
+      const tagMatch = !tagContext.typedTag || taskTag.startsWith(tagContext.typedTag);
+      return taskNameMatch && tagMatch;
     });
   }
   return data.tasks.filter(t => t.name.toLowerCase().includes(q));
 }
 
-function projectSuggestionsForInput(rawInput) {
-  const context = parseProjectAutocompleteContext(rawInput);
-  if (!context || !context.taskPart) return [];
+function tagSuggestionsForInput(rawInput) {
+  const context = parseTagAutocompleteContext(rawInput);
+  if (!context) return [];
 
-  const typed = context.typedProject;
+  const typed = context.typedTag;
   const existing = data.projects
-    .filter(project => !typed || project.normalizedName.startsWith(typed))
+    .filter(t => !typed || t.normalizedName.startsWith(typed))
     .sort((a, b) => a.name.localeCompare(b.name))
-    .slice(0, MAX_PROJECT_SUGGESTIONS)
-    .map(project => ({ kind: 'existing', projectName: project.normalizedName, label: project.name, projectId: project.id }));
+    .slice(0, MAX_TAG_SUGGESTIONS)
+    .map(t => ({ kind: 'existing', tagName: t.normalizedName, label: t.name, tagId: t.id }));
 
-  const hasExact = data.projects.some(project => project.normalizedName === typed);
+  const hasExact = data.projects.some(t => t.normalizedName === typed);
   if (typed && !hasExact) {
     existing.unshift({
       kind: 'create',
-      projectName: typed,
-      label: `create project "${typed}"`,
+      tagName: typed,
+      label: `create tag "${typed}"`,
     });
   }
   return existing;
 }
 
-function closeProjectAutocomplete() {
-  projectSuggestions = [];
-  projectSelIdx = -1;
-  projectAutocompleteEl.innerHTML = '';
-  projectAutocompleteEl.style.display = 'none';
+function closeTagAutocomplete() {
+  tagSuggestions = [];
+  tagSelIdx = -1;
+  tagAutocompleteEl.innerHTML = '';
+  tagAutocompleteEl.style.display = 'none';
 }
 
-function renderProjectAutocomplete() {
-  if (!projectSuggestions.length) {
-    closeProjectAutocomplete();
+function renderTagAutocomplete() {
+  if (!tagSuggestions.length) {
+    closeTagAutocomplete();
     return;
   }
-  projectAutocompleteEl.style.display = 'block';
-  projectAutocompleteEl.innerHTML = projectSuggestions.map((suggestion, idx) => `
-    <div class="project-row${idx === projectSelIdx ? ' selected' : ''}">
-      <button class="project-option${idx === projectSelIdx ? ' selected' : ''}" data-project-name="${esc(suggestion.projectName)}" type="button">
+  tagAutocompleteEl.style.display = 'block';
+  tagAutocompleteEl.innerHTML = tagSuggestions.map((suggestion, idx) => `
+    <div class="tag-row${idx === tagSelIdx ? ' selected' : ''}">
+      <button class="tag-option${idx === tagSelIdx ? ' selected' : ''}" data-tag-name="${esc(suggestion.tagName)}" type="button">
         ${suggestion.kind === 'create' ? `<span class="po-create">${esc(suggestion.label)}</span>` : `<span class="po-hash">#</span>${esc(suggestion.label)}`}
       </button>
       ${suggestion.kind === 'existing' ? `
-        <button class="project-delete-btn" data-project-delete-id="${esc(suggestion.projectId)}" type="button" title="delete project">✕</button>
+        <button class="tag-delete-btn" data-tag-delete-id="${esc(suggestion.tagId)}" type="button" title="delete tag">✕</button>
       ` : ''}
     </div>
   `).join('');
 }
 
-function updateProjectAutocomplete(resetSelection = false) {
-  projectSuggestions = projectSuggestionsForInput(searchEl.value);
-  if (!projectSuggestions.length) {
-    closeProjectAutocomplete();
+function updateTagAutocomplete(resetSelection = false) {
+  tagSuggestions = tagSuggestionsForInput(searchEl.value);
+  if (!tagSuggestions.length) {
+    closeTagAutocomplete();
     return;
   }
-  if (resetSelection || projectSelIdx < 0) {
-    projectSelIdx = 0;
+  if (resetSelection || tagSelIdx < 0) {
+    tagSelIdx = 0;
   } else {
-    projectSelIdx = Math.min(projectSelIdx, projectSuggestions.length - 1);
+    tagSelIdx = Math.min(tagSelIdx, tagSuggestions.length - 1);
   }
-  renderProjectAutocomplete();
+  renderTagAutocomplete();
 }
 
-function applyProjectSuggestion(suggestion) {
-  const context = parseProjectAutocompleteContext(searchEl.value);
+function applyTagSuggestion(suggestion) {
+  const context = parseTagAutocompleteContext(searchEl.value);
   if (!context || !context.taskPart) return;
-  searchEl.value = `${context.taskPart} #${suggestion.projectName}`;
-  closeProjectAutocomplete();
+  searchEl.value = `${context.taskPart} #${suggestion.tagName}`;
+  closeTagAutocomplete();
 }
 
-function selectedProjectSuggestion() {
-  if (!projectSuggestions.length) return null;
-  return projectSuggestions[Math.max(projectSelIdx, 0)] || projectSuggestions[0] || null;
+function selectedTagSuggestion() {
+  if (!tagSuggestions.length) return null;
+  return tagSuggestions[Math.max(tagSelIdx, 0)] || tagSuggestions[0] || null;
 }
 
 function sortRunningFirst(tasks) {
@@ -1318,7 +1427,7 @@ function tasksForDay(dateStr) {
       return {
         id: t.id,
         name: t.name,
-        projectName: projectNameForTask(t),
+        tagName: tagNameForTask(t),
         sessions,
         ms: sessions.reduce((a, s) => a + (s.end - s.start), 0)
       };
@@ -1378,7 +1487,7 @@ function renderHistory() {
           }</div>` : '';
           return `
           <div class="day-task-row${dtExp ? ' expanded' : ''}${dtHL}" data-task-id="${t.id}" data-date="${dateStr}">
-            <span class="dt-name">${esc(t.name)}${t.projectName ? ` <span class="dt-project">#${esc(t.projectName)}</span>` : ''}</span>
+            <span class="dt-name">${esc(t.name)}${t.tagName ? ` <span class="dt-tag">#${esc(t.tagName)}</span>` : ''}</span>
             <span class="dt-time">${fmt(t.ms)}</span>
             <span class="dt-chevron${dtExp ? ' expanded' : ''}"></span>
             <button class="dt-del" tabindex="-1">✕</button>
@@ -1591,7 +1700,7 @@ function updateHintRow() {
   const count       = filtered().length;
   const searchFocused = document.activeElement === searchEl;
   const hasRunning  = !!runningTask();
-  const selectedProject = selectedProjectSuggestion();
+  const selectedTag = selectedTagSuggestion();
 
   const parts = [];
   if (count >= 1) {
@@ -1603,11 +1712,11 @@ function updateHintRow() {
   parts.push(`<kbd>n</kbd> new`);
   parts.push(`<kbd>N</kbd> later`);
   if (searchFocused) {
-    if (projectSuggestions.length) {
-      parts.push(`<kbd>↑↓</kbd> project`);
-      parts.push(`<kbd>←</kbd> close projects`);
-      if (selectedProject?.kind === 'existing') {
-        parts.push(`<kbd>→</kbd> delete project`);
+    if (tagSuggestions.length) {
+      parts.push(`<kbd>↑↓</kbd> tags`);
+      parts.push(`<kbd>←</kbd> close tags`);
+      if (selectedTag?.kind === 'existing') {
+        parts.push(`<kbd>→</kbd> delete tag`);
       }
     } else {
       parts.push(`<kbd><span class="char-up">↵</span></kbd> start / stop`);
@@ -1625,7 +1734,7 @@ function updateHintRow() {
     parts.push(`<kbd>esc</kbd> exit`);
   } else {
     if (!searchFocused) parts.push(`<kbd>j/↓</kbd> navigate`);
-    if (hasRunning && !projectSuggestions.length) parts.push(`<kbd>esc</kbd> clear`);
+    if (hasRunning && !tagSuggestions.length) parts.push(`<kbd>esc</kbd> clear`);
   }
 
   hintRowEl.innerHTML = parts.join(' &nbsp;·&nbsp; ');
@@ -1656,13 +1765,13 @@ function render() {
 
   // create hint (inline in search row)
   const parsedQuery = parseTaskInput(q);
-  const canCreateFromInput = parsedQuery.taskName && (!q.includes('#') || parsedQuery.hasProject);
+  const canCreateFromInput = parsedQuery.taskName && (!q.includes('#') || parsedQuery.hasTag);
   const exactMatch = tasks.find(task =>
     task.name.toLowerCase() === parsedQuery.taskName.toLowerCase() &&
     (
-      !parsedQuery.hasProject
+      !parsedQuery.hasTag
         ? !task.projectId
-        : (projectNameForTask(task) || '') === parsedQuery.projectName
+        : (tagNameForTask(task) || '') === parsedQuery.tagName
     )
   );
   document.getElementById('search-create-hint').classList.toggle('visible', !!(canCreateFromInput && !exactMatch));
@@ -1727,7 +1836,7 @@ function render() {
         <span class="t-shortcut">${i < 9 ? i + 1 : i === 9 ? 0 : ''}</span>
         <button class="t-play${isRunning ? ' pausing' : ''}" data-id="${task.id}" tabindex="-1">${isRunning ? '⏸' : '▶'}</button>
         <span class="t-name">${linkify(task.name)}</span>
-        ${projectNameForTask(task) ? `<span class="t-project">#${esc(projectNameForTask(task))}</span>` : ''}
+        ${tagNameForTask(task) ? `<span class="t-tag">#${esc(tagNameForTask(task))}</span>` : ''}
         <span class="t-dot"></span>
         ${isRecent ? '' : (() => {
           if (isRunning) {
@@ -1771,6 +1880,7 @@ function render() {
   renderLater();
   ensureTick();
   updateTabTitle();
+  syncTagTip();
 }
 
 // ── Keyboard ──────────────────────────────────────────────────────────────────
@@ -1779,7 +1889,7 @@ async function startFromQuery(rawQuery) {
   if (!parsed.taskName) return false;
 
   if (rawQuery.includes('#')) {
-    if (!parsed.hasProject) return false;
+    if (!parsed.hasTag) return false;
     const taggedTask = createOrFindTaskFromQuery(rawQuery);
     if (!taggedTask) return false;
     await startTask(taggedTask);
@@ -1808,33 +1918,37 @@ document.getElementById('search-create-hint').addEventListener('mousedown', asyn
   e.preventDefault(); // keep focus on input
   const q = query();
   if (!q) return;
-  if (q.includes('#') && !parseTaskInput(q).hasProject) return;
+  if (q.includes('#') && !parseTaskInput(q).hasTag) return;
   const task = createOrFindTaskFromQuery(q);
   if (!task) return;
   await startTask(task);
   searchEl.value = '';
   selIdx = -1;
-  closeProjectAutocomplete();
+  closeTagAutocomplete();
   render();
 });
 
 searchEl.addEventListener('input', () => {
   selIdx = -1;
-  updateProjectAutocomplete(true);
+  updateTagAutocomplete(true);
   render();
 });
 
 searchEl.addEventListener('focus', () => {
   navIdx = -1;
-  updateProjectAutocomplete(true);
+  updateTagAutocomplete(true);
   updateHintRow();
 });
-searchEl.addEventListener('blur',  updateHintRow);
+searchEl.addEventListener('blur', e => {
+  updateHintRow();
+  if (suppressSearchBlurClear) return;
+  // Focus moved into the tag menu (✕ or row) — keep draft until click/confirm finishes.
+  const rt = e.relatedTarget;
+  if (rt && tagAutocompleteEl?.contains(rt)) return;
 
-searchEl.addEventListener('blur', () => {
   searchEl.value = '';
   selIdx = -1;
-  closeProjectAutocomplete();
+  closeTagAutocomplete();
   render();
 });
 
@@ -1842,40 +1956,40 @@ searchEl.addEventListener('keydown', async e => {
   const q     = query();
   const tasks = filtered();
 
-  if (projectSuggestions.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+  if (tagSuggestions.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
     e.preventDefault();
     const step = e.key === 'ArrowDown' ? 1 : -1;
-    projectSelIdx = (projectSelIdx + step + projectSuggestions.length) % projectSuggestions.length;
-    renderProjectAutocomplete();
+    tagSelIdx = (tagSelIdx + step + tagSuggestions.length) % tagSuggestions.length;
+    renderTagAutocomplete();
     return;
   }
 
-  if (projectSuggestions.length && (e.key === 'Enter' || e.key === 'Tab')) {
+  if (tagSuggestions.length && (e.key === 'Enter' || e.key === 'Tab')) {
     e.preventDefault();
-    const suggestion = selectedProjectSuggestion();
+    const suggestion = selectedTagSuggestion();
     if (!suggestion) return;
-    applyProjectSuggestion(suggestion);
+    applyTagSuggestion(suggestion);
     render();
     return;
   }
 
-  if (projectSuggestions.length && e.key === 'ArrowRight') {
+  if (tagSuggestions.length && e.key === 'ArrowRight') {
     e.preventDefault();
-    const suggestion = selectedProjectSuggestion();
+    const suggestion = selectedTagSuggestion();
     if (!suggestion || suggestion.kind !== 'existing') return;
-    deleteProjectById(suggestion.projectId);
-    updateProjectAutocomplete(true);
+    deleteTagById(suggestion.tagId);
+    updateTagAutocomplete(true);
     render();
     return;
   }
 
-  if (projectSuggestions.length && e.key === 'ArrowLeft') {
+  if (tagSuggestions.length && e.key === 'ArrowLeft') {
     e.preventDefault();
     e.stopPropagation();
-    const context = parseProjectAutocompleteContext(searchEl.value);
+    const context = parseTagAutocompleteContext(searchEl.value);
     if (context) searchEl.value = context.taskPart;
     selIdx = -1;
-    closeProjectAutocomplete();
+    closeTagAutocomplete();
     render();
     return;
   }
@@ -1912,25 +2026,25 @@ searchEl.addEventListener('keydown', async e => {
     if (started) {
       searchEl.value = '';
       selIdx = -1;
-      closeProjectAutocomplete();
+      closeTagAutocomplete();
       render();
     }
   }
 });
 
-projectAutocompleteEl.addEventListener('mousedown', e => e.preventDefault());
-projectAutocompleteEl.addEventListener('click', e => {
-  const deleteBtn = e.target.closest('[data-project-delete-id]');
+tagAutocompleteEl.addEventListener('mousedown', e => e.preventDefault());
+tagAutocompleteEl.addEventListener('click', e => {
+  const deleteBtn = e.target.closest('[data-tag-delete-id]');
   if (deleteBtn) {
-    deleteProjectById(deleteBtn.dataset.projectDeleteId);
-    updateProjectAutocomplete(true);
+    deleteTagById(deleteBtn.dataset.tagDeleteId);
+    updateTagAutocomplete(true);
     render();
     return;
   }
 
-  const option = e.target.closest('[data-project-name]');
+  const option = e.target.closest('[data-tag-name]');
   if (!option) return;
-  applyProjectSuggestion({ projectName: option.dataset.projectName });
+  applyTagSuggestion({ tagName: option.dataset.tagName });
   searchEl.focus();
   render();
 });
@@ -2202,7 +2316,19 @@ document.addEventListener('keydown', async e => {
   }
 });
 
-document.querySelector('.search-prompt').addEventListener('click', () => searchEl.focus());
+document.querySelector('.search-prompt').addEventListener('click', e => {
+  if (e.target.closest('.tag-tip-close')) return;
+  searchEl.focus();
+});
+
+const tagTipClose = document.querySelector('.tag-tip-close');
+if (tagTipClose) {
+  tagTipClose.addEventListener('click', e => {
+    e.stopPropagation();
+    e.preventDefault();
+    dismissTagTip();
+  });
+}
 
 totalRow.addEventListener('click', e => {
   if (e.target.closest('.total-expand')) {

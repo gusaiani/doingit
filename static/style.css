@@ -327,6 +327,7 @@ html[data-theme="system"] #auth-screen {
   position: relative;
   display: flex;
   align-items: center;
+  overflow: visible;
   border-bottom: 2px solid var(--border);
   margin-bottom: 4px;
   transition: border-color 0.15s;
@@ -335,17 +336,183 @@ html[data-theme="system"] #auth-screen {
 .search-row:focus-within { border-bottom-color: var(--accent); }
 
 .search-prompt {
+  position: relative;
   flex-shrink: 0;
   line-height: 0;
   padding: 6px 2px 6px 0;
   user-select: none;
   cursor: pointer;
+  overflow: visible;
+}
+
+/* Speech bubble from the beaver — tail points down toward the mascot */
+.tag-tip {
+  display: block;
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 50;
+  width: max-content;
+  max-width: min(400px, calc(100vw - 20px));
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px) scale(0.97);
+  transform-origin: 28px 100%;
+  cursor: default;
+  text-align: left;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.07));
+}
+
+.tag-tip.visible {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0s;
+  animation: tag-tip-breathe 3.2s ease-in-out 0.5s infinite;
+}
+
+.tag-tip:not(.visible) {
+  transition:
+    opacity 0.2s ease-out,
+    transform 0.2s ease-out,
+    visibility 0s linear 0.2s;
+}
+
+.tag-tip-inner {
+  position: relative;
+  box-sizing: border-box;
+  max-width: inherit;
+  padding: 12px 40px 12px 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+/* Outer tail stroke */
+.tag-tip-inner::before {
+  content: '';
+  position: absolute;
+  bottom: -9px;
+  left: 20px;
+  width: 0;
+  height: 0;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-top: 10px solid var(--border);
+}
+
+/* Inner tail fill */
+.tag-tip-inner::after {
+  content: '';
+  position: absolute;
+  bottom: -7px;
+  left: 21px;
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-top: 9px solid var(--surface);
+}
+
+.tag-tip-text {
+  margin: 0;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+@media (max-width: 340px) {
+  .tag-tip-text {
+    white-space: normal;
+  }
+}
+
+.tag-tip-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  border: none;
+  background: none;
+  color: var(--dim);
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.tag-tip-close:hover {
+  color: var(--text);
+  background: var(--sel);
+}
+
+@keyframes tag-tip-breathe {
+  0%,
+  100% {
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.07));
+  }
+  50% {
+    filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.1));
+  }
+}
+
+@keyframes beaver-mascot-speak {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-1px) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-2px) rotate(0deg);
+  }
+  75% {
+    transform: translateY(-1px) rotate(2deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tag-tip {
+    transform: none;
+    filter: none;
+  }
+
+  .tag-tip.visible {
+    animation: none;
+    transform: none;
+    transition: opacity 0.12s ease-out, visibility 0s;
+  }
+
+  .tag-tip:not(.visible) {
+    transition: opacity 0.12s ease-out, visibility 0s linear 0.12s;
+  }
+
+  .search-prompt:has(#tag-tip.visible) .beaver-mascot {
+    animation: none;
+  }
 }
 
 .beaver-mascot {
   height: 28px;
   width: auto;
   display: block;
+  transform-origin: 50% 100%;
+}
+
+/* Gentle bob while the tag tip is open (“speaking”) */
+.search-prompt:has(#tag-tip.visible) .beaver-mascot {
+  animation: beaver-mascot-speak 0.7s ease-in-out 2;
 }
 
 #search {
@@ -368,27 +535,27 @@ html[data-theme="system"] #auth-screen {
   padding-top: 6px;
 }
 
-.project-autocomplete {
+.tag-autocomplete {
   margin-top: 6px;
   border: 1px solid var(--border);
   background: var(--surface);
 }
 
-.project-row {
+.tag-row {
   display: flex;
   align-items: center;
   border-top: 1px solid var(--border);
 }
 
-.project-row:first-of-type {
+.tag-row:first-of-type {
   border-top: none;
 }
 
-.project-row.selected {
+.tag-row.selected {
   background: var(--sel);
 }
 
-.project-option {
+.tag-option {
   width: 100%;
   border: none;
   background: transparent;
@@ -400,13 +567,13 @@ html[data-theme="system"] #auth-screen {
   cursor: pointer;
 }
 
-.project-option:hover,
-.project-option.selected {
+.tag-option:hover,
+.tag-option.selected {
   background: var(--sel);
   color: var(--text);
 }
 
-.project-delete-btn {
+.tag-delete-btn {
   border: none;
   background: none;
   color: var(--red);
@@ -417,7 +584,7 @@ html[data-theme="system"] #auth-screen {
   opacity: 0.7;
 }
 
-.project-delete-btn:hover {
+.tag-delete-btn:hover {
   opacity: 1;
   filter: brightness(1.1);
 }
@@ -596,7 +763,7 @@ html[data-theme="system"] #auth-screen {
   font-size: 16px;
 }
 
-.t-project {
+.t-tag {
   font-size: 12px;
   color: var(--dimmer);
   white-space: nowrap;
@@ -700,7 +867,7 @@ html[data-theme="system"] #auth-screen {
     row-gap: 2px;
   }
 
-  .t-project {
+  .t-tag {
     order: 6;
     flex-basis: 100%;
     margin-left: 0;
@@ -999,7 +1166,7 @@ html[data-theme="dark"] .sl-date-input { color-scheme: dark; }
   white-space: nowrap;
 }
 
-.dt-project {
+.dt-tag {
   color: var(--dimmer);
 }
 
@@ -1544,6 +1711,16 @@ html[data-theme="dark"] .sl-date-input { color-scheme: dark; }
 }
 
 .about-body p { margin-bottom: 14px; }
+
+.about-body code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
 
 .about-section-label {
   color: var(--text);

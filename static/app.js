@@ -1128,10 +1128,10 @@ async function startTask(task, { parallel = false } = {}) {
     if (!allowed) return;
   }
 
-  // Plain start switches tasks; a parallel start leaves other tasks running
-  if (!parallel) {
+  // Plain start switches tasks; a parallel start leaves other tasks running.
+  // Pausing a running task only ever touches that task.
+  if (!parallel && !isRunning) {
     for (const cur of runningTasks()) {
-      if (cur.id === task.id) continue;
       cur.sessions.find(s => !s.end).end = Date.now();
       clearPomodoroTimer(cur.id);
     }

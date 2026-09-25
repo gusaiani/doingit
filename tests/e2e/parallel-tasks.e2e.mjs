@@ -101,6 +101,53 @@ test.describe('Parallel task tracking', () => {
 
     await expect(page.locator('.task-row.running')).toHaveCount(0);
   });
+
+  test('clicking pause on one running task leaves the other running', async ({ page }) => {
+    const now = Date.now();
+    await seedTasks(page, [
+      { id: 'a', name: 'Alpha', sessions: [{ start: now - 100, end: null }] },
+      { id: 'b', name: 'Beta', sessions: [{ start: now - 200, end: null }] },
+    ]);
+    await expect(page.locator('.task-row.running')).toHaveCount(2);
+
+    await page.locator('.task-row', { hasText: 'Alpha' }).locator('.t-play').click();
+
+    await expect(page.locator('.task-row.running')).toHaveCount(1);
+    await expect(page.locator('.task-row.running .t-name')).toHaveText('Beta');
+  });
+
+  test('number key on a running task pauses only that task', async ({ page }) => {
+    const now = Date.now();
+    await seedTasks(page, [
+      { id: 'a', name: 'Alpha', sessions: [{ start: now - 100, end: null }] },
+      { id: 'b', name: 'Beta', sessions: [{ start: now - 200, end: null }] },
+    ]);
+    await expect(page.locator('.task-row.running')).toHaveCount(2);
+
+    // Rows are sorted running-first, so key 2 targets the second running row
+    const second = await page.locator('.task-row.running .t-name').nth(1).textContent();
+    await page.locator('#search').blur();
+    await page.keyboard.press('2');
+
+    await expect(page.locator('.task-row.running')).toHaveCount(1);
+    await expect(page.locator('.task-row.running .t-name')).not.toHaveText(second);
+  });
+
+  test('Enter on a running task in the search field pauses only that task', async ({ page }) => {
+    const now = Date.now();
+    await seedTasks(page, [
+      { id: 'a', name: 'Alpha', sessions: [{ start: now - 100, end: null }] },
+      { id: 'b', name: 'Beta', sessions: [{ start: now - 200, end: null }] },
+    ]);
+    await expect(page.locator('.task-row.running')).toHaveCount(2);
+
+    const search = page.locator('#search');
+    await search.fill('Alpha');
+    await search.press('Enter');
+
+    await expect(page.locator('.task-row.running')).toHaveCount(1);
+    await expect(page.locator('.task-row.running .t-name')).toHaveText('Beta');
+  });
 });
 
 test.describe('Inline parallel hint', () => {

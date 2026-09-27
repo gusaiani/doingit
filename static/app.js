@@ -2981,15 +2981,28 @@ async function initSharedReportPage() {
 // ── Timesheet page ──────────────────────────────────────────────────────────
 // Public, read-only view of one tag's hours: the page a client opens.
 
+// The three headline cards: current periods the server always reports.
 const TIMESHEET_PERIODS = [
   { key: 'week',  label: 'This week' },
   { key: 'month', label: 'This month' },
   { key: 'year',  label: 'This year' },
 ];
+// Tabs for the breakdown. Anything beyond the current periods is fetched as
+// an explicit `from`..`to` range and lands in `tsData.range`.
+const TIMESHEET_TABS = [
+  ...TIMESHEET_PERIODS,
+  { key: 'last-week',  label: 'Last week' },
+  { key: 'last-month', label: 'Last month' },
+  { key: 'last-year',  label: 'Last year' },
+  { key: 'custom',     label: 'Custom range' },
+];
 const TIMESHEET_POLL_MS = 5000;
+// Spans longer than this are broken down by month instead of by day.
+const TIMESHEET_BY_MONTH_ABOVE_DAYS = 62;
 
 let tsData = null;
 let tsPeriod = 'week';
+let tsCustomRange = null;   // { from, to } as local ISO dates, once applied
 
 // Decimal hours for invoicing. Derived from whole minutes so it always agrees
 // with the H:MM figure beside it.
@@ -2997,10 +3010,84 @@ function fmtDecimalHours(ms) {
   return `${(Math.floor(ms / 60000) / 60).toFixed(2)} h`;
 }
 
+function isoLocalDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function isIsoDate(str) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(str || '')) return false;
+  const d = new Date(str + 'T12:00:00');
+  return !isNaN(d) && isoLocalDate(d) === str;
+}
+
+// Local calendar bounds of the preset ranges. Weeks start on Monday, as
+// everywhere else in the app.
+function tsPresetRange(key, now = new Date()) {
+  const y = now.getFullYear(), m = now.getMonth();
+  if (key === 'last-week') {
+    const monday = new Date(y, m, now.getDate() - ((now.getDay() + 6) % 7) - 7);
+    return { from: isoLocalDate(monday), to: isoLocalDate(new Date(y, m, monday.getDate() + 6)) };
+  }
+  if (key === 'last-month') {
+    return { from: isoLocalDate(new Date(y, m - 1, 1)), to: isoLocalDate(new Date(y, m, 0)) };
+  }
+  if (key === 'last-year') {
+    return { from: `${y - 1}-01-01`, to: `${y - 1}-12-31` };
+  }
+  return null;
+}
+
+function tsIsCardPeriod(key) {
+  return TIMESHEET_PERIODS.some(p => p.key === key);
+}
+
+// The range the current tab needs from the server, or null for the current
+// periods (and for "custom" before dates are applied).
+function tsActiveRange() {
+  if (tsIsCardPeriod(tsPeriod)) return null;
+  return tsPeriod === 'custom' ? tsCustomRange : tsPresetRange(tsPeriod);
+}
+
+// The figures for the current tab. A `range` block from an earlier request
+// does not count: its dates must match what this tab asked for.
+function tsActivePeriod() {
+  if (!tsData) return null;
+  if (tsIsCardPeriod(tsPeriod)) return tsData[tsPeriod];
+  const range = tsActiveRange();
+  const got = tsData.range;
+  return range && got && got.start === range.from && got.end === range.to ? got : null;
+}
+
+// Restore the tab from the URL so a client can bookmark "last month".
+function tsReadUrl() {
+  const q = new URLSearchParams(location.search);
+  const from = q.get('from'), to = q.get('to');
+  if (isIsoDate(from) && isIsoDate(to) && from <= to) {
+    tsPeriod = 'custom';
+    tsCustomRange = { from, to };
+    return;
+  }
+  const period = q.get('period');
+  if (TIMESHEET_TABS.some(t => t.key === period && t.key !== 'custom')) tsPeriod = period;
+}
+
+function tsWriteUrl() {
+  const q = new URLSearchParams();
+  if (tsPeriod === 'custom') {
+    if (tsCustomRange) { q.set('from', tsCustomRange.from); q.set('to', tsCustomRange.to); }
+  } else if (!tsIsCardPeriod(tsPeriod) && tsPeriod !== 'week') {
+    q.set('period', tsPeriod);
+  }
+  const qs = q.toString();
+  history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : ''));
+}
+
 // Server figures are a snapshot taken at `now`; while something is running the
-// clock keeps moving, so add the time elapsed since that snapshot.
+// clock keeps moving, so add the time elapsed since that snapshot. A period
+// that ended before today cannot contain the running session.
 function tsLive(period) {
-  const elapsed = tsData.running_count ? Math.max(0, Date.now() - tsData.now) : 0;
+  const includesNow = period.end >= isoLocalDate(new Date());
+  const elapsed = tsData.running_count && includesNow ? Math.max(0, Date.now() - tsData.now) : 0;
   return {
     total: period.total_ms + tsData.running_count * elapsed,
     net: period.net_ms + elapsed,
@@ -3009,7 +3096,9 @@ function tsLive(period) {
 
 function fmtTimesheetDate(iso) {
   const d = new Date(iso + 'T12:00:00');
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const opts = { month: 'short', day: 'numeric' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return d.toLocaleDateString(undefined, opts);
 }
 
 function timesheetBars(rows, labelKey, maxMs) {
@@ -3030,11 +3119,18 @@ function timesheetBars(rows, labelKey, maxMs) {
   }).join('');
 }
 
-// Week and month break down by day; a year breaks down by month.
-function timesheetPeriodRows(periodKey) {
-  const period = tsData[periodKey];
+function tsSpanDays(period) {
+  return Math.round((new Date(period.end + 'T12:00:00') - new Date(period.start + 'T12:00:00')) / 86_400_000) + 1;
+}
+
+function tsBreaksDownByMonth(period) {
+  return tsSpanDays(period) > TIMESHEET_BY_MONTH_ABOVE_DAYS;
+}
+
+// Short spans break down by day; long ones (a year) by month.
+function timesheetPeriodRows(period) {
   const days = tsData.days.filter(d => d.date >= period.start && d.date <= period.end);
-  if (periodKey !== 'year') {
+  if (!tsBreaksDownByMonth(period)) {
     return days.map(d => ({
       label: new Date(d.date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }),
       total_ms: d.total_ms,
@@ -3051,43 +3147,54 @@ function timesheetPeriodRows(periodKey) {
   }));
 }
 
-function renderTimesheet() {
+function tsCardHtml(key, label, period, extraClass = '') {
+  const { total, net } = tsLive(period);
+  const netLine = net < total
+    ? `<div class="ts-card-net" id="ts-net-${key}" title="Parallel tasks counted once">net ${fmtHM(net)}</div>`
+    : '';
+  return `
+    <div class="ts-card ${extraClass}">
+      <div class="ts-card-label">${esc(label)}</div>
+      <div class="ts-card-total" id="ts-total-${key}">${fmtHM(total)}</div>
+      <div class="ts-card-decimal" id="ts-decimal-${key}">${fmtDecimalHours(total)}</div>
+      ${netLine}
+      <div class="ts-card-range">${fmtTimesheetDate(period.start)} - ${fmtTimesheetDate(period.end)}</div>
+    </div>`;
+}
+
+// The page is three regions so the date pickers survive the 5-second re-render
+// of everything around them (rewriting them would close a half-picked date).
+function tsShell() {
   const el = document.getElementById('timesheet-page');
-  if (!el || !tsData) return;
+  if (!el) return null;
+  if (!document.getElementById('ts-main')) {
+    const today = isoLocalDate(new Date());
+    el.innerHTML = `
+      <div id="ts-main"></div>
+      <form class="ts-range-picker" id="ts-range-picker" hidden>
+        <label>From <input type="date" id="ts-range-from" max="${today}" required></label>
+        <label>To <input type="date" id="ts-range-to" max="${today}" required></label>
+        <button type="submit" class="ts-range-apply" id="ts-range-apply">Show</button>
+        <span class="ts-range-error" id="ts-range-error"></span>
+      </form>
+      <div id="ts-detail"></div>`;
+    if (tsCustomRange) {
+      document.getElementById('ts-range-from').value = tsCustomRange.from;
+      document.getElementById('ts-range-to').value = tsCustomRange.to;
+    }
+  }
+  return el;
+}
 
-  const cards = TIMESHEET_PERIODS.map(({ key, label }) => {
-    const period = tsData[key];
-    const { total, net } = tsLive(period);
-    const netLine = net < total
-      ? `<div class="ts-card-net" id="ts-net-${key}" title="Parallel tasks counted once">net ${fmtHM(net)}</div>`
-      : '';
-    return `
-      <div class="ts-card">
-        <div class="ts-card-label">${label}</div>
-        <div class="ts-card-total" id="ts-total-${key}">${fmtHM(total)}</div>
-        <div class="ts-card-decimal" id="ts-decimal-${key}">${fmtDecimalHours(total)}</div>
-        ${netLine}
-        <div class="ts-card-range">${fmtTimesheetDate(period.start)} - ${fmtTimesheetDate(period.end)}</div>
-      </div>`;
-  }).join('');
+function renderTimesheet() {
+  if (!tsShell() || !tsData) return;
 
-  const tabs = TIMESHEET_PERIODS.map(({ key, label }) =>
-    `<button class="ts-tab${key === tsPeriod ? ' active' : ''}" data-ts-period="${key}">${label}</button>`
+  const cards = TIMESHEET_PERIODS.map(({ key, label }) => tsCardHtml(key, label, tsData[key])).join('');
+  const tabs = TIMESHEET_TABS.map(({ key, label }) =>
+    `<button type="button" class="ts-tab${key === tsPeriod ? ' active' : ''}" data-ts-period="${key}">${label}</button>`
   ).join('');
 
-  const tasks = tsData[tsPeriod].tasks;
-  const periodRows = timesheetPeriodRows(tsPeriod);
-  const breakdown = tasks.length ? `
-    <div class="ts-section">
-      <div class="ts-section-title">By task</div>
-      <div class="report-rows">${timesheetBars(tasks, 'name', tasks[0].total_ms)}</div>
-    </div>
-    <div class="ts-section">
-      <div class="ts-section-title">${tsPeriod === 'year' ? 'By month' : 'By day'}</div>
-      <div class="report-rows">${timesheetBars(periodRows, 'label', Math.max(...periodRows.map(r => r.total_ms)))}</div>
-    </div>` : '<div class="done-empty">No tracked time in this period.</div>';
-
-  el.innerHTML = `
+  document.getElementById('ts-main').innerHTML = `
     <h1 class="ts-title">#${esc(tsData.tag)}</h1>
     <div class="ts-sub">
       ${tsData.running_count
@@ -3096,16 +3203,48 @@ function renderTimesheet() {
       <span class="ts-sub-sep">·</span> live timesheet, updates automatically
     </div>
     <div class="ts-cards">${cards}</div>
-    <div class="ts-tabs">${tabs}</div>
-    ${breakdown}
+    <div class="ts-tabs">${tabs}</div>`;
+
+  document.getElementById('ts-range-picker').hidden = tsPeriod !== 'custom';
+
+  const period = tsActivePeriod();
+  let detail;
+  if (!period) {
+    detail = tsActiveRange()
+      ? '<div class="done-loading">Loading…</div>'
+      : '<div class="ts-range-hint">Pick two dates to see the hours between them.</div>';
+  } else {
+    const tabLabel = TIMESHEET_TABS.find(t => t.key === tsPeriod).label;
+    const headline = tsIsCardPeriod(tsPeriod)
+      ? ''
+      : `<div class="ts-cards ts-cards-range">${tsCardHtml('range', tsPeriod === 'custom' ? 'Selected range' : tabLabel, period, 'ts-card-wide')}</div>`;
+    const tasks = period.tasks;
+    const periodRows = timesheetPeriodRows(period);
+    const breakdown = tasks.length ? `
+      <div class="ts-section">
+        <div class="ts-section-title">By task</div>
+        <div class="report-rows">${timesheetBars(tasks, 'name', tasks[0].total_ms)}</div>
+      </div>
+      <div class="ts-section">
+        <div class="ts-section-title">${tsBreaksDownByMonth(period) ? 'By month' : 'By day'}</div>
+        <div class="report-rows">${timesheetBars(periodRows, 'label', Math.max(...periodRows.map(r => r.total_ms)))}</div>
+      </div>` : '<div class="done-empty">No tracked time in this period.</div>';
+    detail = headline + breakdown;
+  }
+
+  document.getElementById('ts-detail').innerHTML = `
+    ${detail}
     <div class="ts-footer">Tracked with <a href="/">Doing It</a>.</div>`;
 }
 
 // Keep the headline figures moving between polls
 function tickTimesheet() {
   if (!tsData || !tsData.running_count) return;
-  for (const { key } of TIMESHEET_PERIODS) {
-    const { total, net } = tsLive(tsData[key]);
+  const live = TIMESHEET_PERIODS.map(({ key }) => [key, tsData[key]]);
+  const range = tsIsCardPeriod(tsPeriod) ? null : tsActivePeriod();
+  if (range) live.push(['range', range]);
+  for (const [key, period] of live) {
+    const { total, net } = tsLive(period);
     const totalEl = document.getElementById(`ts-total-${key}`);
     if (totalEl) totalEl.textContent = fmtHM(total);
     const decimalEl = document.getElementById(`ts-decimal-${key}`);
@@ -3117,20 +3256,53 @@ function tickTimesheet() {
 
 async function loadTimesheet() {
   const el = document.getElementById('timesheet-page');
+  const q = new URLSearchParams({ tz: new Date().getTimezoneOffset() });
+  const range = tsActiveRange();
+  if (range) { q.set('from', range.from); q.set('to', range.to); }
   try {
-    const r = await fetch(`/timesheet/${TIMESHEET_TOKEN}/data?tz=${new Date().getTimezoneOffset()}`);
+    const r = await fetch(`/timesheet/${TIMESHEET_TOKEN}/data?${q}`);
     if (r.status === 404) {
       el.innerHTML = '<div class="done-empty">This timesheet link is no longer active.</div>';
       tsData = null;
       return false;
     }
     if (!r.ok) return true;
-    tsData = await r.json();
+    const data = await r.json();
+    // The user may have switched tabs while this request was in flight; keep
+    // the range block only if it is still the one being shown.
+    const wanted = tsActiveRange();
+    if (data.range && !(wanted && data.range.start === wanted.from && data.range.end === wanted.to)) {
+      delete data.range;
+    }
+    if (!data.range && tsData && tsData.range) data.range = tsData.range;
+    tsData = data;
     renderTimesheet();
   } catch {
     if (!tsData) el.innerHTML = '<div class="done-empty">Could not load this timesheet.</div>';
   }
   return true;
+}
+
+function tsSelectPeriod(key) {
+  if (key === tsPeriod) return;
+  tsPeriod = key;
+  tsWriteUrl();
+  renderTimesheet();
+  if (tsActiveRange()) loadTimesheet();
+  if (key === 'custom' && !tsCustomRange) document.getElementById('ts-range-from').focus();
+}
+
+function tsApplyCustomRange() {
+  const from = document.getElementById('ts-range-from').value;
+  const to = document.getElementById('ts-range-to').value;
+  const errEl = document.getElementById('ts-range-error');
+  if (!isIsoDate(from) || !isIsoDate(to)) { errEl.textContent = 'Pick both dates.'; return; }
+  if (from > to) { errEl.textContent = 'The end date is before the start date.'; return; }
+  errEl.textContent = '';
+  tsCustomRange = { from, to };
+  tsWriteUrl();
+  renderTimesheet();
+  loadTimesheet();
 }
 
 async function initTimesheetPage() {
@@ -3141,18 +3313,24 @@ async function initTimesheetPage() {
       <button class="header-theme" id="theme-toggle-timesheet" title="Toggle theme"></button>
     </div>
     <div class="report-page timesheet-page" id="timesheet-page">
-      <div class="done-loading">Loading\u2026</div>
+      <div class="done-loading">Loading…</div>
     </div>`;
 
   const btn = document.getElementById('theme-toggle-timesheet');
   btn.innerHTML = THEME_ICONS[localStorage.getItem(THEME_KEY) || 'light'];
   btn.addEventListener('click', () => { cycleTheme(); btn.innerHTML = THEME_ICONS[localStorage.getItem(THEME_KEY) || 'light']; });
 
-  document.getElementById('timesheet-page').addEventListener('click', e => {
+  tsReadUrl();
+
+  const page = document.getElementById('timesheet-page');
+  page.addEventListener('click', e => {
     const tab = e.target.closest('[data-ts-period]');
-    if (!tab) return;
-    tsPeriod = tab.dataset.tsPeriod;
-    renderTimesheet();
+    if (tab) tsSelectPeriod(tab.dataset.tsPeriod);
+  });
+  page.addEventListener('submit', e => {
+    if (e.target.id !== 'ts-range-picker') return;
+    e.preventDefault();
+    tsApplyCustomRange();
   });
 
   if (!await loadTimesheet()) return;

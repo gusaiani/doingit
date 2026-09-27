@@ -274,15 +274,17 @@ Logged-in users can share a read-only view of their tasks, history, done list, a
 
 ## Shared timesheets per #tag
 
-Any `#tag` can be shared as its own read-only timesheet: a page showing the hours worked on that tag this week, this month and this year. It is meant for a client who wants to follow billable hours without an account, and without seeing the rest of your work.
+Any `#tag` can be shared as its own read-only timesheet: a page showing the hours worked on that tag this week, this month and this year, plus last week, last month, last year, or any span of dates. It is meant for a client who wants to follow billable hours without an account, and without seeing the rest of your work.
 
 **How it works**
 
 1. Click "share live view" in the top bar. Below the whole-profile "Live sharing" toggle, the popover lists every `#tag` in your account.
 2. Click "Enable" next to a tag to mint a link like `https://doingit.online/timesheet/<uuid>`, then "Copy". Each tag gets its own token, so a viewer only ever sees that one tag.
 3. The page shows three figures (week, month, year), each as `H:MM` and as decimal hours for invoicing, plus a breakdown by task and by day. The year view breaks down by month instead.
-4. It refetches every 5 seconds and ticks every second while a session is running, so a client watching the page sees an open session grow in real time.
-5. Click "Disable" to revoke a link. Deleting the tag revokes it as well.
+4. Below the cards, tabs switch the breakdown between **This week**, **This month**, **This year**, **Last week**, **Last month**, **Last year** and **Custom range**. Past and custom periods get their own headline card above the breakdown. Custom range shows two date pickers and a "Show" button.
+5. The chosen period is kept in the URL (`?period=last-month`, or `?from=2026-03-01&to=2026-03-15`), so a client can bookmark or forward a link that opens straight on last month's hours.
+6. It refetches every 5 seconds and ticks every second while a session is running, so a client watching the page sees an open session grow in real time.
+7. Click "Disable" to revoke a link. Deleting the tag revokes it as well.
 
 **What counts**
 
@@ -290,6 +292,9 @@ Any `#tag` can be shared as its own read-only timesheet: a page showing the hour
 - A running session counts up to the current moment.
 - Weeks start on Monday, as everywhere else in the app. Month and year are calendar periods in the *viewer's* timezone: the page sends its UTC offset as the `tz` query parameter, so a client abroad sees their own week.
 - Sessions are clipped to the period, so a session running across midnight on a Sunday counts in both weeks, split at the boundary.
+- "Last week" is the previous Monday to Sunday, "last month" the previous calendar month, "last year" the previous calendar year, all in the viewer's timezone. A custom range is inclusive on both ends and may be at most five years long.
+- A period that ended before today never includes a running session, so past ranges hold still while the current cards keep ticking.
+- Spans of up to 62 days break down by day; longer ones break down by month.
 - Each period shows **Total** and, when parallel tracking makes them differ, **Net** (overlapping sessions counted once). See "Parallel tracking".
 
 **API endpoints**
@@ -300,6 +305,7 @@ Any `#tag` can be shared as its own read-only timesheet: a page showing the hour
 | `POST` | `/share/tags/{project_id}/enable` | Mint or return that tag's token (auth required) |
 | `POST` | `/share/tags/{project_id}/disable` | Revoke that tag's link (auth required) |
 | `GET` | `/timesheet/{token}/data?tz={offset}` | Public: week, month and year figures for the tag |
+| `GET` | `/timesheet/{token}/data?tz={offset}&from={YYYY-MM-DD}&to={YYYY-MM-DD}` | Public: the same, plus a `range` block for those inclusive local dates. Pass both or neither; malformed, reversed or over-long ranges return 422 |
 | `GET` | `/timesheet/{token}` | Public: the timesheet page |
 
 Tokens live in the `tag_shares` table, one row per `(user_id, project_id)`. Tag membership itself lives in the `user_data.tasks_json` blob (see "Data"), so the timesheet resolves the tag's task ids from there and then aggregates the relational `sessions` rows.
@@ -309,7 +315,9 @@ Tokens live in the `tag_shares` table, one row per `(user_id, project_id)`. Tag 
 1. Sign in, then type `client work #acme` and press `↵`. Leave it running for a minute.
 2. Open "share live view", click "Enable" next to `#acme`, then "Copy".
 3. Paste the link into a private window. The week figure should tick up while the session runs.
-4. Click "Disable", then reload the link: it should report that the timesheet is no longer active.
+4. Click "Last month": the headline card and breakdown switch to the previous calendar month, and the URL gains `?period=last-month`. Reload to confirm the tab is restored.
+5. Click "Custom range", pick two dates, then "Show". The URL gains `from` and `to`, and the breakdown covers only those days.
+6. Click "Disable", then reload the link: it should report that the timesheet is no longer active.
 
 ## Task ordering
 

@@ -2,7 +2,7 @@
 import json
 import time
 
-from app import _period_bounds_ms, _summarize_tag_timesheet
+from app import _period_bounds_ms, _range_bounds_ms, _summarize_tag_timesheet
 from tests.helpers import auth_headers
 
 HOUR = 3600_000
@@ -246,3 +246,102 @@ def test_timesheet_page_serves_html(client, alice):
     r = client.get(f"/timesheet/{token}")
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
+
+
+# ── Arbitrary date ranges ────────────────────────────────────────────────────
+
+def utc_ms(*args):
+    from datetime import datetime, timezone
+    return int(datetime(*args, tzinfo=timezone.utc).timestamp() * 1000)
+
+
+def test_range_bounds_cover_whole_days_in_viewer_timezone():
+    start, end = _range_bounds_ms("2026-08-01", "2026-08-31", 0)
+    assert start == utc_ms(2026, 8, 1)
+    assert end == utc_ms(2026, 9, 1)          # exclusive: midnight after the last day
+    # A viewer at UTC-3 (getTimezoneOffset() == 180) starts their day 3h later in UTC
+    brt_start, _ = _range_bounds_ms("2026-08-01", "2026-08-31", 180)
+    assert brt_start == utc_ms(2026, 8, 1, 3)
+
+
+def test_summary_reports_the_requested_range():
+    now_ms = utc_ms(2026, 9, 9, 12, 0)
+    sessions = [
+        (utc_ms(2026, 8, 10, 9), utc_ms(2026, 8, 10, 11), "Client work"),   # inside
+        (utc_ms(2026, 8, 31, 23), utc_ms(2026, 9, 1, 1), "Client work"),    # straddles the end
+        (utc_ms(2026, 9, 5, 9), utc_ms(2026, 9, 5, 10), "Client work"),     # outside
+    ]
+    summary = _summarize_tag_timesheet(
+        sessions, 0, now_ms, range_bounds=_range_bounds_ms("2026-08-01", "2026-08-31", 0)
+    )
+    rng = summary["range"]
+    assert (rng["start"], rng["end"]) == ("2026-08-01", "2026-08-31")
+    assert rng["total_ms"] == 3 * HOUR
+    assert rng["tasks"] == [{"name": "Client work", "total_ms": 3 * HOUR, "session_count": 2}]
+    # The daily series covers the range so the page can break it down by day
+    days = {d["date"]: d["total_ms"] for d in summary["days"]}
+    assert days["2026-08-10"] == 2 * HOUR
+    assert days["2026-08-31"] == HOUR
+    # Current periods are unaffected: the hour after midnight on Sep 1 plus Sep 5
+    assert summary["month"]["total_ms"] == 2 * HOUR
+    assert "range" not in _summarize_tag_timesheet(sessions, 0, now_ms)
+
+
+def test_summary_range_in_a_previous_year_still_breaks_down_by_day():
+    now_ms = utc_ms(2026, 9, 9, 12, 0)
+    sessions = [(utc_ms(2025, 6, 3, 9), utc_ms(2025, 6, 3, 10), "Client work")]
+    summary = _summarize_tag_timesheet(
+        sessions, 0, now_ms, range_bounds=_range_bounds_ms("2025-01-01", "2025-12-31", 0)
+    )
+    assert summary["range"]["total_ms"] == HOUR
+    assert summary["year"]["total_ms"] == 0
+    assert [d["date"] for d in summary["days"]] == ["2025-06-03"]
+
+
+def test_summary_range_ending_yesterday_ignores_a_running_session():
+    from datetime import datetime, timedelta, timezone
+    now = datetime(2026, 9, 9, 12, 0, tzinfo=timezone.utc)
+    now_ms = int(now.timestamp() * 1000)
+    yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    summary = _summarize_tag_timesheet(
+        [(now_ms - 30 * MINUTE, None, "Client work")], 0, now_ms,
+        range_bounds=_range_bounds_ms(yesterday, yesterday, 0),
+    )
+    assert summary["range"]["total_ms"] == 0
+
+
+def test_timesheet_endpoint_returns_last_year_range(client, alice):
+    post_data(client, alice, payload_with_tag({
+        "t1": [{"start": utc_ms(2025, 6, 3, 9), "end": utc_ms(2025, 6, 3, 11)}],
+    }))
+    token = enable_tag_share(client, alice)
+    r = client.get(f"/timesheet/{token}/data?tz=0&from=2025-01-01&to=2025-12-31")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["range"]["total_ms"] == 2 * HOUR
+    assert body["range"]["start"] == "2025-01-01"
+    assert body["range"]["end"] == "2025-12-31"
+    assert body["year"]["total_ms"] == 0
+    assert [d["date"] for d in body["days"]] == ["2025-06-03"]
+
+
+def test_timesheet_endpoint_without_range_has_no_range_key(client, alice):
+    post_data(client, alice, payload_with_tag())
+    token = enable_tag_share(client, alice)
+    body = client.get(f"/timesheet/{token}/data?tz=0").json()
+    assert "range" not in body
+
+
+def test_timesheet_endpoint_rejects_bad_ranges(client, alice):
+    post_data(client, alice, payload_with_tag())
+    token = enable_tag_share(client, alice)
+    for qs in (
+        "from=2026-01-01",                       # missing `to`
+        "to=2026-01-31",                         # missing `from`
+        "from=2026-02-01&to=2026-01-01",         # reversed
+        "from=01/01/2026&to=2026-01-31",         # not ISO
+        "from=2026-02-30&to=2026-03-01",         # not a real date
+        "from=2000-01-01&to=2026-01-01",         # longer than 5 years
+    ):
+        r = client.get(f"/timesheet/{token}/data?tz=0&{qs}")
+        assert r.status_code == 422, qs

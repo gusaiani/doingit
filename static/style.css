@@ -2083,6 +2083,7 @@ html[data-theme="dark"] .sl-date-input { color-scheme: dark; }
 
 .ts-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 18px;
 }
@@ -2102,6 +2103,62 @@ html[data-theme="dark"] .sl-date-input { color-scheme: dark; }
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+
+/* Headline for a past or custom range: one card, full width */
+.ts-cards-range { grid-template-columns: 1fr; }
+.ts-card-wide { border-color: var(--accent); }
+
+.ts-range-picker[hidden] { display: none; }
+
+.ts-range-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: -6px 0 18px;
+}
+
+.ts-range-picker label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.ts-range-picker input[type="date"] {
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color-scheme: light dark;
+}
+
+.ts-range-apply {
+  font-family: var(--font);
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+.ts-range-apply:hover { opacity: 0.9; }
+
+.ts-range-error {
+  font-size: 12px;
+  color: var(--red);
+}
+
+.ts-range-hint {
+  font-size: 13px;
+  color: var(--dimmer);
+  margin-bottom: 24px;
 }
 
 .ts-section { margin-bottom: 24px; }

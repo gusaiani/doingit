@@ -13,7 +13,11 @@ const MIME = { '.html':'text/html', '.js':'application/javascript', '.css':'text
 const TOKEN = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const hour = 3_600_000, min = 60_000;
 
-let server, BASE, timesheet;
+let server, BASE, timesheet, lastRange;
+
+function iso(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 function fixture({ running = 0 } = {}) {
   const now = Date.now();
@@ -49,10 +53,21 @@ function fixture({ running = 0 } = {}) {
 
 test.beforeAll(async () => {
   server = createServer((req, res) => {
-    const url = req.url.split('?')[0];
+    const [url, qs = ''] = req.url.split('?');
     if (url === `/timesheet/${TOKEN}/data`) {
+      const q = new URLSearchParams(qs);
+      const body = { ...timesheet };
+      if (q.has('from') && q.has('to')) {
+        lastRange = { from: q.get('from'), to: q.get('to') };
+        body.range = {
+          start: q.get('from'), end: q.get('to'),
+          total_ms: 7 * hour, net_ms: 6 * hour,
+          tasks: [{ name: 'Range work', total_ms: 7 * hour, session_count: 5 }],
+        };
+        body.days = [...timesheet.days, { date: q.get('from'), total_ms: 7 * hour, net_ms: 6 * hour }];
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(timesheet));
+      res.end(JSON.stringify(body));
       return;
     }
     const isPageRoute = url === '/' || url === `/timesheet/${TOKEN}`;
@@ -67,7 +82,7 @@ test.beforeAll(async () => {
 
 test.afterAll(() => { server?.close(); });
 
-test.beforeEach(() => { timesheet = fixture(); });
+test.beforeEach(() => { timesheet = fixture(); lastRange = null; });
 
 test('shows the tag and hours for week, month and year', async ({ page }) => {
   await page.goto(`${BASE}/timesheet/${TOKEN}`);
@@ -108,4 +123,74 @@ test('reports a revoked link', async ({ page }) => {
   await page.route(`**/timesheet/${TOKEN}/data*`, route => route.fulfill({ status: 404, body: '{}' }));
   await page.goto(`${BASE}/timesheet/${TOKEN}`);
   await expect(page.locator('.done-empty')).toContainText('no longer active');
+});
+
+test('last month asks the server for the previous calendar month', async ({ page }) => {
+  await page.goto(`${BASE}/timesheet/${TOKEN}`);
+  await page.click('[data-ts-period="last-month"]');
+  await expect(page.locator('#ts-total-range')).toHaveText('7h 0m');
+  await expect(page.locator('#ts-decimal-range')).toHaveText('7.00 h');
+  await expect(page.locator('#ts-net-range')).toHaveText('net 6h 0m');
+  await expect(page.locator('.report-task-name').first()).toHaveText('Range work');
+
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const last = new Date(now.getFullYear(), now.getMonth(), 0);
+  expect(lastRange).toEqual({ from: iso(first), to: iso(last) });
+  await expect(page).toHaveURL(/[?&]period=last-month/);
+});
+
+test('last week is the previous Monday to Sunday', async ({ page }) => {
+  await page.goto(`${BASE}/timesheet/${TOKEN}`);
+  await page.click('[data-ts-period="last-week"]');
+  await expect(page.locator('#ts-total-range')).toHaveText('7h 0m');
+  const from = new Date(lastRange.from + 'T12:00:00');
+  const to = new Date(lastRange.to + 'T12:00:00');
+  expect(from.getDay()).toBe(1);
+  expect(to.getDay()).toBe(0);
+  expect((to - from) / 86_400_000).toBe(6);
+  expect(to < new Date()).toBe(true);
+});
+
+test('last year is the previous calendar year, broken down by month', async ({ page }) => {
+  await page.goto(`${BASE}/timesheet/${TOKEN}`);
+  await page.click('[data-ts-period="last-year"]');
+  await expect(page.locator('#ts-total-range')).toHaveText('7h 0m');
+  const y = new Date().getFullYear() - 1;
+  expect(lastRange).toEqual({ from: `${y}-01-01`, to: `${y}-12-31` });
+  await expect(page.locator('.ts-section-title').last()).toHaveText('By month');
+});
+
+test('a custom range is applied from the date pickers and kept in the URL', async ({ page }) => {
+  await page.goto(`${BASE}/timesheet/${TOKEN}`);
+  await page.click('[data-ts-period="custom"]');
+  await page.fill('#ts-range-from', '2026-03-01');
+  await page.fill('#ts-range-to', '2026-03-15');
+  await page.click('#ts-range-apply');
+  await expect(page.locator('#ts-total-range')).toHaveText('7h 0m');
+  expect(lastRange).toEqual({ from: '2026-03-01', to: '2026-03-15' });
+  await expect(page).toHaveURL(/[?&]from=2026-03-01/);
+  await expect(page).toHaveURL(/[?&]to=2026-03-15/);
+  await expect(page.locator('.ts-section-title').last()).toHaveText('By day');
+});
+
+test('a range in the URL is selected on load', async ({ page }) => {
+  await page.goto(`${BASE}/timesheet/${TOKEN}?from=2026-03-01&to=2026-03-15`);
+  await expect(page.locator('#ts-total-range')).toHaveText('7h 0m');
+  await expect(page.locator('[data-ts-period="custom"]')).toHaveClass(/active/);
+  await expect(page.locator('#ts-range-from')).toHaveValue('2026-03-01');
+  expect(lastRange).toEqual({ from: '2026-03-01', to: '2026-03-15' });
+
+  await page.goto(`${BASE}/timesheet/${TOKEN}?period=last-year`);
+  await expect(page.locator('[data-ts-period="last-year"]')).toHaveClass(/active/);
+  await expect(page.locator('#ts-total-range')).toHaveText('7h 0m');
+});
+
+test('going back to this week drops the range from the URL', async ({ page }) => {
+  await page.goto(`${BASE}/timesheet/${TOKEN}?period=last-month`);
+  await expect(page.locator('#ts-total-range')).toHaveText('7h 0m');
+  await page.click('[data-ts-period="week"]');
+  await expect(page.locator('#ts-total-range')).toHaveCount(0);
+  await expect(page.locator('#ts-total-week')).toHaveText('5h 0m');
+  await expect(page).not.toHaveURL(/period=/);
 });

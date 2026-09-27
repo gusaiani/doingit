@@ -15,7 +15,7 @@ import bcrypt
 import httpx
 import psycopg2
 import psycopg2.extras
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -849,15 +849,47 @@ def _period_bounds_ms(tz_offset_min: int, now_ms: int) -> dict[str, tuple[int, i
     }
 
 
-def _summarize_tag_timesheet(sessions, tz_offset_min: int, now_ms: int) -> dict:
+MAX_RANGE_DAYS = 5 * 366
+
+
+def _range_bounds_ms(from_date: str, to_date: str, tz_offset_min: int) -> tuple[int, int]:
+    """UTC millisecond bounds of the local days `from_date`..`to_date`, inclusive.
+
+    Both are `YYYY-MM-DD` in the viewer's timezone. The end bound is the
+    midnight *after* `to_date`, so it is exclusive. Raises 422 on anything
+    that is not a well-formed, ordered range of at most `MAX_RANGE_DAYS`.
+    """
+    try:
+        start = datetime.strptime(from_date, "%Y-%m-%d")
+        end = datetime.strptime(to_date, "%Y-%m-%d") + timedelta(days=1)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Dates must be YYYY-MM-DD")
+    if end <= start:
+        raise HTTPException(status_code=422, detail="`to` must not be before `from`")
+    if (end - start).days > MAX_RANGE_DAYS:
+        raise HTTPException(status_code=422, detail=f"Range longer than {MAX_RANGE_DAYS} days")
+    return _to_utc_ms(start, tz_offset_min), _to_utc_ms(end, tz_offset_min)
+
+
+def _summarize_tag_timesheet(
+    sessions,
+    tz_offset_min: int,
+    now_ms: int,
+    range_bounds: tuple[int, int] | None = None,
+) -> dict:
     """Roll a tag's sessions up into week / month / year figures plus a daily series.
 
     `sessions` is an iterable of `(start_ms, end_ms_or_None, task_name)`. Open
     sessions count up to `now_ms`. Sessions are clipped to each period, so one
     that runs across midnight on a Sunday counts in both weeks, split.
+
+    With `range_bounds` (see `_range_bounds_ms`) an extra `range` period is
+    reported, and the daily series is widened to cover it.
     """
     sessions = list(sessions)
     bounds = _period_bounds_ms(tz_offset_min, now_ms)
+    if range_bounds is not None:
+        bounds["range"] = range_bounds
     result: dict = {}
 
     for period, (start, end) in bounds.items():
@@ -874,18 +906,22 @@ def _summarize_tag_timesheet(sessions, tz_offset_min: int, now_ms: int) -> dict:
             entry["session_count"] += 1
         result[period] = {
             "start": _local_date_str(start, tz_offset_min),
-            "end": _local_date_str(end, tz_offset_min),
+            # `end` is exclusive for ranges (next midnight) and `now_ms` for the
+            # current periods; one ms earlier is the last day in both cases.
+            "end": _local_date_str(end - 1, tz_offset_min),
             "total_ms": sum(b - a for a, b, _ in clipped),
             "net_ms": _merged_intervals_ms((a, b) for a, b, _ in clipped),
             "tasks": sorted(per_task.values(), key=lambda t: -t["total_ms"]),
         }
 
-    # Daily series over the year window, split at the viewer's local midnights
-    year_start, year_end = bounds["year"]
+    # Daily series over the year window (widened to cover a requested range),
+    # split at the viewer's local midnights
+    series_start = min(b[0] for b in bounds.values())
+    series_end = max(b[1] for b in bounds.values())
     by_day: dict[str, list[tuple[int, int]]] = {}
     for s_start, s_end, _ in sessions:
-        a = max(s_start, year_start)
-        b = min(s_end if s_end is not None else now_ms, year_end)
+        a = max(s_start, series_start)
+        b = min(s_end if s_end is not None else now_ms, series_end)
         while b > a:
             piece_end = min(b, _next_local_midnight_ms(a, tz_offset_min))
             by_day.setdefault(_local_date_str(a, tz_offset_min), []).append((a, piece_end))
@@ -933,13 +969,21 @@ def _tag_from_blob(user_id: int, project_id: str, db) -> tuple[str | None, list[
     return tag.get("name"), task_ids
 
 
-def _fetch_tag_timesheet(user_id: int, project_id: str, db, tz_offset_min: int = 0):
+def _fetch_tag_timesheet(
+    user_id: int,
+    project_id: str,
+    db,
+    tz_offset_min: int = 0,
+    range_bounds: tuple[int, int] | None = None,
+):
     tag_name, task_ids = _tag_from_blob(user_id, project_id, db)
     if tag_name is None:
         raise HTTPException(status_code=404, detail="Timesheet not found")
 
     now_ms = int(time.time() * 1000)
     year_start = _period_bounds_ms(tz_offset_min, now_ms)["year"][0]
+    if range_bounds is not None:
+        year_start = min(year_start, range_bounds[0])
     rows = []
     if task_ids:
         db.execute("""
@@ -960,7 +1004,7 @@ def _fetch_tag_timesheet(user_id: int, project_id: str, db, tz_offset_min: int =
         "tag": tag_name,
         "now": now_ms,
         "running_count": sum(1 for _, end, _ in rows if end is None),
-        **_summarize_tag_timesheet(rows, tz_offset_min, now_ms),
+        **_summarize_tag_timesheet(rows, tz_offset_min, now_ms, range_bounds),
     }
 
 
@@ -1031,9 +1075,22 @@ def timesheet_data(
     token: str,
     db: Annotated[psycopg2.extensions.cursor, Depends(get_db)],
     tz: int = 0,
+    from_date: Annotated[str | None, Query(alias="from")] = None,
+    to_date: Annotated[str | None, Query(alias="to")] = None,
 ):
+    """Current week / month / year figures, plus an arbitrary `from`..`to` range.
+
+    `from` and `to` are inclusive local dates (`YYYY-MM-DD`); pass both or
+    neither. The page uses them for "last week", "last month", "last year" and
+    custom spans.
+    """
     user_id, project_id = tag_share_from_token(token, db)
-    return _fetch_tag_timesheet(user_id, project_id, db, tz)
+    range_bounds = None
+    if from_date is not None or to_date is not None:
+        if from_date is None or to_date is None:
+            raise HTTPException(status_code=422, detail="Pass both `from` and `to`")
+        range_bounds = _range_bounds_ms(from_date, to_date, tz)
+    return _fetch_tag_timesheet(user_id, project_id, db, tz, range_bounds)
 
 
 def count_today_sessions(user_id: int, db) -> int:

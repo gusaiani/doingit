@@ -782,8 +782,12 @@ async function loadTagShares() {
   } catch {}
 }
 
-function timesheetUrl(shareToken) {
-  return `${location.origin}/timesheet/${shareToken}`;
+// project id → the period the copied link opens on (this week when unset)
+const _tagSharePeriods = new Map();
+
+function timesheetUrl(shareToken, period = 'week') {
+  const qs = period === 'week' ? '' : `?period=${period}`;
+  return `${location.origin}/timesheet/${shareToken}${qs}`;
 }
 
 function renderTagShares() {
@@ -796,11 +800,18 @@ function renderTagShares() {
   }
   listEl.innerHTML = tags.map(tag => {
     const shareToken = _tagShares.get(tag.id);
+    const period = _tagSharePeriods.get(tag.id) || 'week';
+    const periodOptions = TIMESHEET_TABS.filter(t => t.key !== 'custom').map(t =>
+      `<option value="${t.key}"${t.key === period ? ' selected' : ''}>${t.label}</option>`
+    ).join('');
     const linkRow = shareToken ? `
       <div class="share-popover-link-row">
-        <input class="share-popover-url" value="${esc(timesheetUrl(shareToken))}" readonly>
+        <input class="share-popover-url" value="${esc(timesheetUrl(shareToken, period))}" readonly>
         <button class="share-popover-copy" data-copy-tag="${esc(tag.id)}">Copy</button>
-      </div>` : '';
+      </div>
+      <label class="share-tag-period">Link opens on
+        <select data-period-tag="${esc(tag.id)}">${periodOptions}</select>
+      </label>` : '';
     return `
       <div class="share-tag-item" data-tag-id="${esc(tag.id)}">
         <div class="share-popover-row">
@@ -829,7 +840,7 @@ async function toggleTagShare(projectId) {
   } catch {}
 }
 
-async function copyToClipboard(text, btn) {
+async function writeClipboard(text) {
   try {
     await navigator.clipboard.writeText(text);
   } catch {
@@ -840,6 +851,10 @@ async function copyToClipboard(text, btn) {
     document.execCommand('copy');
     tmp.remove();
   }
+}
+
+async function copyToClipboard(text, btn) {
+  await writeClipboard(text);
   btn.textContent = 'Copied!';
   setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
 }
@@ -916,6 +931,13 @@ document.getElementById('share-tag-list').addEventListener('click', e => {
     const url = copy.closest('.share-popover-link-row').querySelector('.share-popover-url').value;
     copyToClipboard(url, copy);
   }
+});
+
+document.getElementById('share-tag-list').addEventListener('change', e => {
+  const select = e.target.closest('[data-period-tag]');
+  if (!select) return;
+  _tagSharePeriods.set(select.dataset.periodTag, select.value);
+  renderTagShares();
 });
 
 // Close popover when clicking outside
@@ -3003,6 +3025,7 @@ const TIMESHEET_BY_MONTH_ABOVE_DAYS = 62;
 let tsData = null;
 let tsPeriod = 'week';
 let tsCustomRange = null;   // { from, to } as local ISO dates, once applied
+let tsLinkCopied = false;   // "Copied!" must survive the 5-second re-render
 
 // Decimal hours for invoicing. Derived from whole minutes so it always agrees
 // with the H:MM figure beside it.
@@ -3026,7 +3049,8 @@ function tsPresetRange(key, now = new Date()) {
   const y = now.getFullYear(), m = now.getMonth();
   if (key === 'last-week') {
     const monday = new Date(y, m, now.getDate() - ((now.getDay() + 6) % 7) - 7);
-    return { from: isoLocalDate(monday), to: isoLocalDate(new Date(y, m, monday.getDate() + 6)) };
+    const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
+    return { from: isoLocalDate(monday), to: isoLocalDate(sunday) };
   }
   if (key === 'last-month') {
     return { from: isoLocalDate(new Date(y, m - 1, 1)), to: isoLocalDate(new Date(y, m, 0)) };
@@ -3058,7 +3082,7 @@ function tsActivePeriod() {
   return range && got && got.start === range.from && got.end === range.to ? got : null;
 }
 
-// Restore the tab from the URL so a client can bookmark "last month".
+// Restore the tab from the URL so a link can open straight on "last month".
 function tsReadUrl() {
   const q = new URLSearchParams(location.search);
   const from = q.get('from'), to = q.get('to');
@@ -3075,7 +3099,7 @@ function tsWriteUrl() {
   const q = new URLSearchParams();
   if (tsPeriod === 'custom') {
     if (tsCustomRange) { q.set('from', tsCustomRange.from); q.set('to', tsCustomRange.to); }
-  } else if (!tsIsCardPeriod(tsPeriod) && tsPeriod !== 'week') {
+  } else if (tsPeriod !== 'week') {
     q.set('period', tsPeriod);
   }
   const qs = q.toString();
@@ -3203,7 +3227,10 @@ function renderTimesheet() {
       <span class="ts-sub-sep">·</span> live timesheet, updates automatically
     </div>
     <div class="ts-cards">${cards}</div>
-    <div class="ts-tabs">${tabs}</div>`;
+    <div class="ts-tabs">
+      ${tabs}
+      <button type="button" class="ts-copy-link" id="ts-copy-link" title="Copy a link that opens on this period">${tsLinkCopied ? 'Copied!' : 'Copy link'}</button>
+    </div>`;
 
   document.getElementById('ts-range-picker').hidden = tsPeriod !== 'custom';
 
@@ -3305,6 +3332,14 @@ function tsApplyCustomRange() {
   loadTimesheet();
 }
 
+// The address bar already carries the period, so the link is just the URL.
+async function tsCopyLink() {
+  await writeClipboard(location.href);
+  tsLinkCopied = true;
+  renderTimesheet();
+  setTimeout(() => { tsLinkCopied = false; renderTimesheet(); }, 2000);
+}
+
 async function initTimesheetPage() {
   document.body.classList.add('shared-view');
   document.getElementById('app').innerHTML = `
@@ -3326,6 +3361,7 @@ async function initTimesheetPage() {
   page.addEventListener('click', e => {
     const tab = e.target.closest('[data-ts-period]');
     if (tab) tsSelectPeriod(tab.dataset.tsPeriod);
+    else if (e.target.closest('#ts-copy-link')) tsCopyLink();
   });
   page.addEventListener('submit', e => {
     if (e.target.id !== 'ts-range-picker') return;

@@ -279,10 +279,10 @@ Any `#tag` can be shared as its own read-only timesheet: a page showing the hour
 **How it works**
 
 1. Click "share live view" in the top bar. Below the whole-profile "Live sharing" toggle, the popover lists every `#tag` in your account.
-2. Click "Enable" next to a tag to mint a link like `https://doingit.online/timesheet/<uuid>`, then "Copy". Each tag gets its own token, so a viewer only ever sees that one tag.
+2. Click "Enable" next to a tag to mint a link like `https://doingit.online/timesheet/<uuid>`, then "Copy". Each tag gets its own token, so a viewer only ever sees that one tag. The "Link opens on" menu under the link picks the period the copied link starts on, for example **Last month** for invoicing (`.../timesheet/<uuid>?period=last-month`).
 3. The page shows three figures (week, month, year), each as `H:MM` and as decimal hours for invoicing, plus a breakdown by task and by day. The year view breaks down by month instead.
 4. Below the cards, tabs switch the breakdown between **This week**, **This month**, **This year**, **Last week**, **Last month**, **Last year** and **Custom range**. Past and custom periods get their own headline card above the breakdown. Custom range shows two date pickers and a "Show" button.
-5. The chosen period is kept in the URL (`?period=last-month`, or `?from=2026-03-01&to=2026-03-15`), so a client can bookmark or forward a link that opens straight on last month's hours.
+5. The chosen period is kept in the URL, so a link can open straight on last month's hours. `?period=` takes `month`, `year`, `last-week`, `last-month` or `last-year` (no parameter means this week); a custom range is `?from=2026-03-01&to=2026-03-15`. Preset periods are relative to the day the link is opened: `?period=last-month` always shows the calendar month before the current one. "Copy link" beside the tabs copies the URL of the period being viewed.
 6. It refetches every 5 seconds and ticks every second while a session is running, so a client watching the page sees an open session grow in real time.
 7. Click "Disable" to revoke a link. Deleting the tag revokes it as well.
 
@@ -315,7 +315,7 @@ Tokens live in the `tag_shares` table, one row per `(user_id, project_id)`. Tag 
 1. Sign in, then type `client work #acme` and press `↵`. Leave it running for a minute.
 2. Open "share live view", click "Enable" next to `#acme`, then "Copy".
 3. Paste the link into a private window. The week figure should tick up while the session runs.
-4. Click "Last month": the headline card and breakdown switch to the previous calendar month, and the URL gains `?period=last-month`. Reload to confirm the tab is restored.
+4. Click "Last month": the headline card and breakdown switch to the previous calendar month, and the URL gains `?period=last-month`. Reload to confirm the tab is restored. Click "Copy link" and paste it in another window: it opens on last month.
 5. Click "Custom range", pick two dates, then "Show". The URL gains `from` and `to`, and the breakdown covers only those days.
 6. Click "Disable", then reload the link: it should report that the timesheet is no longer active.
 

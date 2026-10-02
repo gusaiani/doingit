@@ -194,3 +194,51 @@ test('going back to this week drops the range from the URL', async ({ page }) =>
   await expect(page.locator('#ts-total-week')).toHaveText('5h 0m');
   await expect(page).not.toHaveURL(/period=/);
 });
+
+test('this month and this year are kept in the URL too', async ({ page }) => {
+  await page.goto(`${BASE}/timesheet/${TOKEN}`);
+  await page.click('[data-ts-period="month"]');
+  await expect(page).toHaveURL(/[?&]period=month/);
+  await page.click('[data-ts-period="year"]');
+  await expect(page).toHaveURL(/[?&]period=year/);
+
+  await page.goto(`${BASE}/timesheet/${TOKEN}?period=month`);
+  await expect(page.locator('[data-ts-period="month"]')).toHaveClass(/active/);
+});
+
+test('copy link copies the URL of the period being viewed', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto(`${BASE}/timesheet/${TOKEN}`);
+  await page.click('[data-ts-period="last-month"]');
+  await expect(page.locator('#ts-total-range')).toHaveText('7h 0m');
+  await page.click('#ts-copy-link');
+  await expect(page.locator('#ts-copy-link')).toHaveText('Copied!');
+  expect(await page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(`${BASE}/timesheet/${TOKEN}?period=last-month`);
+
+  await page.click('[data-ts-period="week"]');
+  await page.click('#ts-copy-link');
+  expect(await page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(`${BASE}/timesheet/${TOKEN}`);
+});
+
+test('the owner picks which period a tag link opens on', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto(BASE);
+  await page.evaluate(token => {
+    data.projects = [{ id: 'p1', name: 'acme' }];
+    _tagShares = new Map([['p1', token]]);
+    document.getElementById('share-popover').style.display = 'block';
+    renderTagShares();
+  }, TOKEN);
+
+  const url = page.locator('.share-tag-item .share-popover-url');
+  await expect(url).toHaveValue(`${BASE}/timesheet/${TOKEN}`);
+  await page.selectOption('[data-period-tag="p1"]', 'last-month');
+  await expect(url).toHaveValue(`${BASE}/timesheet/${TOKEN}?period=last-month`);
+  await expect(page.locator('[data-period-tag="p1"]')).toHaveValue('last-month');
+
+  await page.click('[data-copy-tag="p1"]');
+  expect(await page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(`${BASE}/timesheet/${TOKEN}?period=last-month`);
+});

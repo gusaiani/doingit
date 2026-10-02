@@ -2105,6 +2105,18 @@ html[data-theme="dark"] .sl-date-input { color-scheme: dark; }
   color: #fff;
 }
 
+.ts-copy-link {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-family: var(--font);
+  font-size: 12px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.ts-copy-link:hover { text-decoration: underline; }
+
 /* Headline for a past or custom range: one card, full width */
 .ts-cards-range { grid-template-columns: 1fr; }
 .ts-card-wide { border-color: var(--accent); }
@@ -2213,6 +2225,24 @@ html[data-theme="dark"] .sl-date-input { color-scheme: dark; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.share-tag-period {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--dimmer);
+}
+.share-tag-period select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 11px;
+  padding: 2px 4px;
 }
 
 .share-tag-empty {
